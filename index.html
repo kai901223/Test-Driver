@@ -169,14 +169,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .schedule-note-box{margin-top:6px;padding:8px 10px;background:var(--amber-bg);border-radius:var(--radius-md);font-size:12px;color:var(--amber-text);line-height:1.6}
 .paste-area{width:100%;min-height:200px;padding:10px;font-size:12px;border:0.5px solid var(--border-mid);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:monospace;resize:vertical}
 .schedule-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
-/* Role-based visibility */
-body:not(.role-admin) #schedule-add-btn { display: none !important; }
-body.role-admin #schedule-add-btn { display: inline-block !important; }
-body:not(.role-admin) .admin-only { display: none !important; }
-/* Splash screen *//* Role-based visibility */
-body:not(.role-admin) #schedule-add-btn { display: none !important; }
-body.role-admin #schedule-add-btn { display: inline-block !important; }
-body:not(.role-admin) .admin-only { display: none !important; }
+/* Role-based visibility - handled by JS */
+/* Splash screen *//* Role-based visibility - handled by JS */
 /* Splash screen */
 .splash{position:fixed;inset:0;background:#185fa5;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;transition:opacity .4s ease}
 .splash.hide{opacity:0;pointer-events:none}
@@ -363,7 +357,7 @@ body:not(.role-admin) .admin-only { display: none !important; }
           <button class="btn" onclick="var d=new Date();document.getElementById('schedule-date-filter').value=todayStr();renderSchedule()">今天</button>
           <button class="btn" onclick="scheduleNavDay(-1)">‹ 前一天</button>
           <button class="btn" onclick="scheduleNavDay(1)">後一天 ›</button>
-          <button class="btn btn-primary" id="schedule-add-btn" onclick="openSchedulePasteModal()">+ 新增司機班表</button>
+          <span id="schedule-add-btn-wrap"></span>
         </div>
         <div id="schedule-content"></div>
       </div>
@@ -1311,6 +1305,14 @@ function scheduleNavDay(delta){
 function setupScheduleUI(){
   var df = document.getElementById('schedule-date-filter');
   if(df && !df.value) df.value = todayStr();
+  var wrap = document.getElementById('schedule-add-btn-wrap');
+  if(wrap){
+    if(currentRole === 'admin'){
+      wrap.innerHTML = '<button class="btn btn-primary" onclick="openSchedulePasteModal()">+ 新增司機班表</button>';
+    } else {
+      wrap.innerHTML = '';
+    }
+  }
 }
 
 // ── Parse pasted Google Sheet text ───────────────────────────
