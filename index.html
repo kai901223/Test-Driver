@@ -351,13 +351,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="panel-schedule" class="panel">
         <div class="toolbar">
           <span class="toolbar-title">班表</span>
+          <span id="schedule-add-btn-wrap"></span>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
           <input type="date" class="form-input" id="schedule-date-filter" style="width:150px" onchange="renderSchedule()">
-          <button class="btn" onclick="var d=new Date();document.getElementById('schedule-date-filter').value=todayStr();renderSchedule()">今天</button>
+          <button class="btn" onclick="document.getElementById('schedule-date-filter').value=todayStr();renderSchedule()">今天</button>
           <button class="btn" onclick="scheduleNavDay(-1)">‹ 前一天</button>
           <button class="btn" onclick="scheduleNavDay(1)">後一天 ›</button>
-          <span id="schedule-add-btn-wrap"></span>
         </div>
         <div id="schedule-content"></div>
       </div>
