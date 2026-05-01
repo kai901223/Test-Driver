@@ -349,15 +349,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="panel-schedule" class="panel">
         <div class="toolbar">
           <span class="toolbar-title">班表</span>
-          <div id="schedule-admin-btns" style="display:none">
-            <button class="btn btn-primary" onclick="openSchedulePasteModal()">+ 匯入班表</button>
-          </div>
         </div>
-        <div class="schedule-toolbar">
-          <input type="date" class="form-input" id="schedule-date-filter" style="width:160px" onchange="renderSchedule()">
-          <button class="btn" onclick="document.getElementById('schedule-date-filter').value=todayStr();renderSchedule()">今天</button>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <input type="date" class="form-input" id="schedule-date-filter" style="width:150px" onchange="renderSchedule()">
+          <button class="btn" onclick="var d=new Date();document.getElementById('schedule-date-filter').value=todayStr();renderSchedule()">今天</button>
           <button class="btn" onclick="scheduleNavDay(-1)">‹ 前一天</button>
           <button class="btn" onclick="scheduleNavDay(1)">後一天 ›</button>
+          <button class="btn btn-primary" id="schedule-add-btn" style="display:none" onclick="openSchedulePasteModal()">+ 新增司機班表</button>
         </div>
         <div id="schedule-content"></div>
       </div>
@@ -1280,6 +1278,17 @@ function saveSchedules(){
   window._fb.fbSet('schedules', schedules);
 }
 
+function deleteDriverSchedule(e, date, driverName){
+  e.stopPropagation();
+  if(!confirm('確認刪除 '+driverName+' '+date+' 的班表？')) return;
+  if(schedules[date] && schedules[date].drivers){
+    delete schedules[date].drivers[driverName];
+    if(Object.keys(schedules[date].drivers).length === 0) delete schedules[date];
+  }
+  saveSchedules();
+  renderSchedule();
+}
+
 function scheduleNavDay(delta){
   var el = document.getElementById('schedule-date-filter');
   var d = el.value ? new Date(el.value) : new Date();
@@ -1289,8 +1298,8 @@ function scheduleNavDay(delta){
 }
 
 function setupScheduleUI(){
-  var el = document.getElementById('schedule-admin-btns');
-  if(el) el.style.display = currentRole==='admin' ? 'flex' : 'none';
+  var el = document.getElementById('schedule-add-btn');
+  if(el) el.style.display = currentRole==='admin' ? 'inline-block' : 'none';
   var df = document.getElementById('schedule-date-filter');
   if(df && !df.value) df.value = todayStr();
 }
@@ -1301,83 +1310,20 @@ function setupScheduleUI(){
 // Driver info rows contain: 司機/姓名/駕駛:name, 電話, 車號, 車型
 // Trip rows contain time + route text
 
-function parseScheduleText(text){
-  var CRLF = '\r\n', LF = '\n', CR = '\r';
-  var lines = text.indexOf(CRLF)>=0 ? text.split(CRLF) : text.split(LF);
-  var cols = lines.map(function(l){ return l.split('\t'); });
-  if(!cols.length) return [];
-  var maxCols = 0;
-  cols.forEach(function(r){ if(r.length > maxCols) maxCols = r.length; });
-  cols = cols.map(function(r){
-    while(r.length < maxCols) r.push('');
-    return r;
-  });
-
-  // Find columns with driver name patterns
-  // Match: 司機: 姓名: 駕駛:
-  var driverKeywords = ['\u53f8\u6a5f\uff1a','\u53f8\u6a5f:','\u59d3\u540d\uff1a','\u59d3\u540d:','\u99d5\u99db\uff1a','\u99d5\u99db:'];
-  var skipPrefixes = ['\u96fb\u8a71','\u8eca\u865f','\u8eca\u724c','\u8eca\u578b','\u6392\u73ed','\u6708\u85aa','\u4f11'];
-
-  var driverCols = [];
-  for(var row = 0; row < cols.length; row++){
-    for(var col = 0; col < cols[row].length; col++){
-      var cell = cols[row][col].trim();
-      var matched = false;
-      for(var k=0; k<driverKeywords.length; k++){
-        if(cell.indexOf(driverKeywords[k])===0){
-          var name = cell.slice(driverKeywords[k].length).trim();
-          // Remove location in parentheses
-          var parenIdx = name.indexOf('(');
-          var parenIdxFull = name.indexOf('\uff08');
-          if(parenIdx>0) name = name.slice(0,parenIdx).trim();
-          if(parenIdxFull>0) name = name.slice(0,parenIdxFull).trim();
-          var alreadyFound = driverCols.some(function(dc){ return dc.col === col; });
-          if(!alreadyFound && name){
-            driverCols.push({ col: col, nameRow: row, name: name });
-          }
-          matched = true;
-          break;
-        }
-      }
-    }
-  }
-  if(!driverCols.length) return [];
-
-  var result = [];
-  driverCols.forEach(function(dc){
-    var trips = [];
-    for(var row = 0; row < cols.length; row++){
-      if(row === dc.nameRow) continue;
-      var cell = (cols[row][dc.col] || '').trim();
-      if(!cell) continue;
-      // Skip info rows
-      var skip = false;
-      for(var s=0; s<skipPrefixes.length; s++){
-        if(cell.indexOf(skipPrefixes[s])===0){ skip=true; break; }
-      }
-      // Skip rows with year patterns like 2024, 05-18,排班 etc
-      if(/^[0-9]{4}[.\u5e74]/.test(cell)) skip=true;
-      if(/^[0-9]{2}-[0-9]{2}/.test(cell) && cell.length < 10) skip=true;
-      if(skip) continue;
-      // Must start with 4-digit time OR be special text
-      if(/^[0-9]{4}/.test(cell) || cell==='\u4f11' || cell==='\u4fdd\u990a' || cell.indexOf('\u9001\u6a5f')>=0 || cell.indexOf('\u63a5\u6a5f')>=0){
-        trips.push(cell);
-      }
-    }
-    result.push({ driverName: dc.name, trips: trips });
-  });
-  return result;
-}
 
 function openSchedulePasteModal(){
+  var driverOpts = drivers.filter(function(d){return d.active;})
+    .map(function(d){return '<option value="'+d.id+'|'+d.name+'">'+d.name+'</option>';}).join('');
+  var curDate = document.getElementById('schedule-date-filter') ? document.getElementById('schedule-date-filter').value : todayStr();
   openModal(
-    '<div class="modal-title">匯入班表</div>'
-    +'<div class="form-row"><label class="form-label">日期</label><input class="form-input" type="date" id="m-sch-date" value="'+todayStr()+'"></div>'
-    +'<div class="form-row"><label class="form-label">貼上班表內容（直接從 Google Sheet 複製整張表格貼上）</label>'
-    +'<textarea class="paste-area" id="m-sch-text" placeholder="從 Google Sheet 全選複製後貼上此處..."></textarea></div>'
+    '<div class="modal-title">新增司機班表</div>'
+    +'<div class="form-row"><label class="form-label">日期</label><input class="form-input" type="date" id="m-sch-date" value="'+curDate+'"></div>'
+    +'<div class="form-row"><label class="form-label">司機</label><select class="form-input" id="m-sch-driver">'+driverOpts+'</select></div>'
+    +'<div class="form-row"><label class="form-label">班表內容（從 Google Sheet 複製該司機的班表欄位後貼上）</label>'
+    +'<textarea class="paste-area" id="m-sch-text" placeholder="直接貼上文字內容，每行一筆車趟，例如：&#10;0550 送蘆竹Ｏ(EUK749204)&#10;1755 接士林Ｏ 舉牌 休旅" style="min-height:160px"></textarea></div>'
     +'<div class="modal-footer">'
     +'<button class="btn" onclick="closeModal()">取消</button>'
-    +'<button class="btn btn-primary" onclick="saveSchedule()">匯入</button>'
+    +'<button class="btn btn-primary" onclick="saveSchedule()">儲存</button>'
     +'</div>'
   );
 }
@@ -1385,20 +1331,31 @@ function openSchedulePasteModal(){
 function saveSchedule(){
   var date = document.getElementById('m-sch-date').value;
   var text = document.getElementById('m-sch-text').value.trim();
+  var driverSel = document.getElementById('m-sch-driver');
   if(!date){ alert('請選擇日期'); return; }
   if(!text){ alert('請貼上班表內容'); return; }
-  
-  var parsed = parseScheduleText(text);
-  if(!parsed.length){
-    alert('無法解析班表，請確認格式是否正確（需包含「司機：」或「姓名：」欄位）');
-    return;
-  }
-  
-  schedules[date] = { rawText: text, parsed: parsed, updatedAt: nowDtStr() };
+  if(!driverSel || !driverSel.value){ alert('請選擇司機'); return; }
+
+  var parts = driverSel.value.split('|');
+  var driverName = parts[1] || parts[0];
+
+  // Simple line-by-line parse: each non-empty line is a trip
+  var lines = text.split('\n');
+  var trips = [];
+  lines.forEach(function(line){
+    var t = line.trim();
+    if(t) trips.push(t);
+  });
+
+  if(!schedules[date]) schedules[date] = { drivers: {}, updatedAt: nowDtStr() };
+  if(!schedules[date].drivers) schedules[date].drivers = {};
+  schedules[date].drivers[driverName] = { trips: trips, updatedAt: nowDtStr() };
+  schedules[date].updatedAt = nowDtStr();
+
   saveSchedules();
   closeModal();
   renderSchedule();
-  alert('成功匯入 ' + parsed.length + ' 位司機的班表');
+  alert('已儲存 ' + driverName + ' ' + date + ' 的班表（共 ' + trips.length + ' 趟）');
 }
 
 function renderSchedule(){
@@ -1406,56 +1363,59 @@ function renderSchedule(){
   var el = document.getElementById('schedule-content');
   if(!el) return;
   el.innerHTML = '';
-  
+
   var date = document.getElementById('schedule-date-filter') ? document.getElementById('schedule-date-filter').value : todayStr();
   if(!date){ el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">請選擇日期</div>'; return; }
 
   var sch = schedules[date];
-  if(!sch || !sch.parsed || !sch.parsed.length){
-    el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">'+date+' 尚無班表資料'+(currentRole==='admin'?'，請點「匯入班表」新增':'')+'</div>';
-    return;
-  }
+  var driversData = sch && sch.drivers ? sch.drivers : {};
+  var driverNames = Object.keys(driversData);
 
-  var blocks = sch.parsed;
-  // For driver: only show own block
+  // For driver: only show own data
   if(currentRole === 'driver'){
-    blocks = blocks.filter(function(b){
-      return b.driverName === currentUser.name || b.driverName.indexOf(currentUser.name) >= 0;
-    });
-    if(!blocks.length){
+    var myName = currentUser.name;
+    driverNames = driverNames.filter(function(n){ return n === myName || n.indexOf(myName) >= 0; });
+    if(!driverNames.length){
       el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">'+date+' 尚無您的班表資料</div>';
       return;
     }
   }
 
-  // Date header
+  if(!driverNames.length){
+    el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">'+date+' 尚無班表資料'+(currentRole==='admin'?'，請點「+ 新增司機班表」':'')+'</div>';
+    return;
+  }
+
   var header = document.createElement('div');
-  header.style.cssText = 'font-size:13px;font-weight:500;color:var(--text-secondary);margin-bottom:10px;padding-bottom:8px;border-bottom:0.5px solid var(--border-light)';
-  header.textContent = date + ' 班表（共 ' + blocks.length + ' 位司機）';
+  header.style.cssText='font-size:13px;font-weight:500;color:var(--text-secondary);margin-bottom:10px;padding-bottom:8px;border-bottom:0.5px solid var(--border-light)';
+  header.textContent = date + ' 班表（共 ' + driverNames.length + ' 位司機）';
   el.appendChild(header);
 
-  blocks.forEach(function(block){
+  driverNames.forEach(function(driverName){
+    var block = driversData[driverName];
     var div = document.createElement('div');
     div.className = 'schedule-driver-block schedule-day';
     
     // Driver header
     var dh = document.createElement('div');
     dh.className = 'schedule-driver-header';
+    var blockTrips = block.trips || [];
     dh.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>'
-      +'<span class="schedule-driver-name">'+block.driverName+'</span>'
-      +'<span style="font-size:11px;color:var(--blue-text);margin-left:auto">'+block.trips.length+' 趟</span>';
+      +'<span class="schedule-driver-name">'+driverName+'</span>'
+      +'<span style="font-size:11px;color:var(--blue-text);margin-left:auto">'+blockTrips.length+' 趟</span>'
+      +(currentRole==='admin'?'<button onclick="deleteDriverSchedule(event,\"'+date+'\",\"'+driverName+'\")" style="font-size:10px;padding:2px 8px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--red-bg);color:var(--red-text);cursor:pointer;margin-left:8px">刪除</button>':'');
     div.appendChild(dh);
 
     var tripArea = document.createElement('div');
     tripArea.className = 'schedule-trips';
 
-    if(!block.trips.length){
+    if(!blockTrips.length){
       var empty = document.createElement('div');
       empty.className = 'schedule-empty';
       empty.textContent = '無車趟資料';
       tripArea.appendChild(empty);
     } else {
-      block.trips.forEach(function(trip, ti){
+      blockTrips.forEach(function(trip, ti){
         var item = document.createElement('div');
         item.className = 'schedule-trip-item';
         var timeMatch = trip.match(/^(\d{4})\s*(.*)/);
@@ -1470,7 +1430,7 @@ function renderSchedule(){
         }
         (function(tripIdx){
           item.onclick = function(){
-            var noteKey = date+'__'+block.driverName+'__'+tripIdx;
+            var noteKey = date+'__'+driverName+'__'+tripIdx;
             var existingNote = (schedules[date]&&schedules[date].notes&&schedules[date].notes[noteKey])||'';
             if(item.classList.contains('expanded')){
               var nb=item.querySelector('.schedule-note-box');
