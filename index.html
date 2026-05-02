@@ -367,11 +367,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           <span class="toolbar-title">班表</span>
           <button class="btn btn-primary" id="schedule-import-btn" onclick="openSchedulePasteModal()">+ 新增司機班表</button>
         </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
           <input type="date" class="form-input" id="schedule-date-filter" style="width:150px" onchange="renderSchedule()">
           <button class="btn" onclick="document.getElementById('schedule-date-filter').value=todayStr();renderSchedule()">今天</button>
           <button class="btn" onclick="scheduleNavDay(-1)">‹ 前一天</button>
           <button class="btn" onclick="scheduleNavDay(1)">後一天 ›</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary)">
+            <span>期間：</span>
+            <input type="date" class="form-input" id="schedule-range-start" style="width:140px" onchange="renderSchedule()">
+            <span>～</span>
+            <input type="date" class="form-input" id="schedule-range-end" style="width:140px" onchange="renderSchedule()">
+            <button class="btn" onclick="clearScheduleRange()">清除</button>
+          </div>
+          <select class="select-sm" id="schedule-driver-filter" style="display:none" onchange="renderSchedule()">
+            <option value="all">全部司機</option>
+          </select>
         </div>
         <div id="schedule-content"></div>
       </div>
@@ -1389,6 +1401,165 @@ function scheduleNavDay(delta){
   renderSchedule();
 }
 
+function clearScheduleRange(){
+  var s=document.getElementById('schedule-range-start');
+  var e=document.getElementById('schedule-range-end');
+  if(s)s.value='';if(e)e.value='';
+  renderSchedule();
+}
+
+function renderSchedule(){
+  setupScheduleUI();
+  var el=document.getElementById('schedule-content');
+  if(!el)return;
+  el.innerHTML='';
+
+  // Update driver filter dropdown
+  var driverFilterSel=document.getElementById('schedule-driver-filter');
+  if(driverFilterSel){
+    driverFilterSel.style.display=currentRole==='admin'?'':'none';
+    if(currentRole==='admin' && driverFilterSel.options.length<=1){
+      drivers.filter(function(d){return d.active;}).forEach(function(d){
+        var opt=document.createElement('option');
+        opt.value=d.name;opt.textContent=d.name;
+        driverFilterSel.appendChild(opt);
+      });
+    }
+  }
+  var selectedDriver=driverFilterSel?driverFilterSel.value:'all';
+  var singleDate=document.getElementById('schedule-date-filter')?document.getElementById('schedule-date-filter').value:'';
+  var rangeStart=document.getElementById('schedule-range-start')?document.getElementById('schedule-range-start').value:'';
+  var rangeEnd=document.getElementById('schedule-range-end')?document.getElementById('schedule-range-end').value:'';
+
+  // Determine dates to show
+  var datesToShow=[];
+  if(rangeStart&&rangeEnd){
+    var cur=new Date(rangeStart);
+    var endD=new Date(rangeEnd);
+    while(cur<=endD){
+      var ds=gds(cur.getFullYear(),cur.getMonth(),cur.getDate());
+      if(schedules[ds])datesToShow.push(ds);
+      cur.setDate(cur.getDate()+1);
+    }
+  } else if(singleDate){
+    datesToShow=[singleDate];
+  } else {
+    el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">請選擇日期或期間</div>';
+    return;
+  }
+
+  if(!datesToShow.length){
+    el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">所選期間無班表資料'+(currentRole==='admin'?'，請點「+ 新增司機班表」匯入':'')+'</div>';
+    return;
+  }
+
+  datesToShow.forEach(function(date){
+    var sch=schedules[date];
+    var driversData=sch&&sch.drivers?sch.drivers:{};
+    var driverNames=Object.keys(driversData);
+
+    if(currentRole==='driver'){
+      var myName=currentUser.name;
+      driverNames=driverNames.filter(function(n){return n===myName||n.indexOf(myName)>=0;});
+    } else if(selectedDriver!=='all'){
+      driverNames=driverNames.filter(function(n){return n===selectedDriver||n.indexOf(selectedDriver)>=0;});
+    }
+    if(!driverNames.length)return;
+
+    // Date header
+    var header=document.createElement('div');
+    header.style.cssText='font-size:13px;font-weight:500;color:var(--text-secondary);margin:10px 0 8px;padding-bottom:6px;border-bottom:0.5px solid var(--border-light)';
+    header.textContent=date+(datesToShow.length>1?' （'+driverNames.length+'位）':'');
+    el.appendChild(header);
+
+    driverNames.forEach(function(driverName){
+      var block=driversData[driverName];
+      var blockTrips=block&&block.trips?block.trips:[];
+
+      var div=document.createElement('div');
+      div.className='schedule-driver-block schedule-day';
+
+      var dh=document.createElement('div');
+      dh.className='schedule-driver-header';
+      dh.innerHTML='<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>'
+        +'<span class="schedule-driver-name">'+driverName+'</span>'
+        +'<span style="font-size:11px;color:var(--blue-text);margin-left:auto">'+blockTrips.length+' 趟</span>'
+        +(currentRole==='admin'?'<button class="sch-add-trip-btn" style="font-size:10px;padding:2px 8px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--blue-bg);color:var(--blue-text);cursor:pointer;margin-left:8px">+ 新增</button>':'')
+        +(currentRole==='admin'?'<button class="sch-del-btn" style="font-size:10px;padding:2px 8px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--red-bg);color:var(--red-text);cursor:pointer;margin-left:4px">刪除班表</button>':'');
+      div.appendChild(dh);
+
+      // Attach handlers
+      var delBtn=dh.querySelector('.sch-del-btn');
+      if(delBtn){(function(d,n){delBtn.onclick=function(e){e.stopPropagation();if(!confirm('確認刪除 '+n+' '+d+' 的班表？'))return;if(schedules[d]&&schedules[d].drivers){delete schedules[d].drivers[n];if(!Object.keys(schedules[d].drivers).length)delete schedules[d];}saveSchedules();renderSchedule();};})(date,driverName);}
+      var addTripBtn=dh.querySelector('.sch-add-trip-btn');
+      if(addTripBtn){(function(d,n){addTripBtn.onclick=function(e){e.stopPropagation();openTripItemModal(d,n,-1,'');};})(date,driverName);}
+
+      var tripArea=document.createElement('div');
+      tripArea.className='schedule-trips';
+
+      if(!blockTrips.length){
+        var empty=document.createElement('div');
+        empty.className='schedule-empty';empty.textContent='無車趟資料';
+        tripArea.appendChild(empty);
+      } else {
+        blockTrips.forEach(function(trip,ti){
+          var item=document.createElement('div');
+          item.className='schedule-trip-item';
+          item.style.cssText='display:flex;align-items:flex-start;gap:8px;padding:7px 10px;justify-content:space-between';
+          var tripContent=document.createElement('div');
+          tripContent.style.cssText='flex:1;cursor:pointer;min-width:0';
+          var timeMatch=trip.match(/^(\d{4})\s*(.*)/);
+          if(timeMatch){
+            var span=document.createElement('span');
+            span.style.cssText='font-family:monospace;font-weight:500;color:var(--blue-text);margin-right:8px';
+            span.textContent=timeMatch[1].slice(0,2)+':'+timeMatch[1].slice(2);
+            tripContent.appendChild(span);
+            tripContent.appendChild(document.createTextNode(timeMatch[2]));
+          } else {tripContent.textContent=trip;}
+
+          var actionDiv=document.createElement('div');
+          actionDiv.style.cssText='display:flex;gap:4px;flex-shrink:0;margin-top:1px';
+          if(currentRole==='admin'){
+            var editBtn=document.createElement('button');
+            editBtn.textContent='編輯';editBtn.style.cssText='font-size:10px;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--blue-bg);color:var(--blue-text);cursor:pointer';
+            var delBtn2=document.createElement('button');
+            delBtn2.textContent='刪除';delBtn2.style.cssText='font-size:10px;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--red-bg);color:var(--red-text);cursor:pointer';
+            actionDiv.appendChild(editBtn);actionDiv.appendChild(delBtn2);
+            (function(tripIdx,tripText){
+              editBtn.onclick=function(e){e.stopPropagation();openTripItemModal(date,driverName,tripIdx,tripText);};
+              delBtn2.onclick=function(e){e.stopPropagation();if(!confirm('確認刪除此車趟？'))return;schedules[date].drivers[driverName].trips.splice(tripIdx,1);saveSchedules();renderSchedule();};
+            })(ti,trip);
+          }
+
+          var noteArea=document.createElement('div');noteArea.style.display='none';noteArea.style.marginTop='6px';
+          (function(tripIdx){
+            tripContent.onclick=function(){
+              var noteKey=date+'__'+driverName+'__'+tripIdx;
+              var existingNote=(schedules[date]&&schedules[date].notes&&schedules[date].notes[noteKey])||'';
+              if(noteArea.style.display!=='none'){noteArea.style.display='none';item.classList.remove('expanded');}
+              else{
+                noteArea.style.display='block';item.classList.add('expanded');noteArea.innerHTML='';
+                var lbl=document.createElement('div');lbl.style.cssText='font-size:11px;color:var(--amber-text);margin-bottom:4px;font-weight:500';lbl.textContent='備註';noteArea.appendChild(lbl);
+                var ta=document.createElement('textarea');ta.style.cssText='width:100%;border:0.5px solid rgba(0,0,0,.15);border-radius:4px;padding:6px;font-size:12px;background:transparent;color:var(--amber-text);resize:none;min-height:60px';ta.placeholder='輸入備註...';ta.value=existingNote;
+                if(currentRole!=='admin')ta.readOnly=true;
+                noteArea.appendChild(ta);
+                if(currentRole==='admin'){var saveBtn2=document.createElement('button');saveBtn2.textContent='儲存備註';saveBtn2.style.cssText='font-size:11px;padding:3px 10px;border:0.5px solid rgba(0,0,0,.2);border-radius:4px;background:rgba(0,0,0,.06);cursor:pointer;color:var(--amber-text);margin-top:6px';saveBtn2.onclick=function(e2){e2.stopPropagation();if(!schedules[date].notes)schedules[date].notes={};schedules[date].notes[noteKey]=ta.value;saveSchedules();alert('備註已儲存');};noteArea.appendChild(saveBtn2);}
+              }
+            };
+          })(ti);
+
+          var itemInner=document.createElement('div');itemInner.style.cssText='flex:1;min-width:0';
+          itemInner.appendChild(tripContent);itemInner.appendChild(noteArea);
+          item.appendChild(itemInner);item.appendChild(actionDiv);
+          tripArea.appendChild(item);
+        });
+      }
+      div.appendChild(tripArea);
+      el.appendChild(div);
+    }); // driverNames
+  }); // datesToShow
+}
+
 function setupScheduleUI(){
   var df = document.getElementById('schedule-date-filter');
   if(df && !df.value) df.value = todayStr();
@@ -1421,254 +1592,82 @@ function openSchedulePasteModal(){
 }
 
 function saveSchedule(){
-  var date = document.getElementById('m-sch-date').value;
-  var text = document.getElementById('m-sch-text').value.trim();
-  var driverSel = document.getElementById('m-sch-driver');
-  if(!date){ alert('請選擇日期'); return; }
-  if(!text){ alert('請貼上班表內容'); return; }
-  if(!driverSel || !driverSel.value){ alert('請選擇司機'); return; }
-
-  var parts = driverSel.value.split('|');
-  var driverName = parts[1] || parts[0];
-
-  // Simple line-by-line parse: each non-empty line is a trip
-  var lines = text.split('\n');
-  var trips = [];
-  lines.forEach(function(line){
-    var t = line.trim();
-    if(t) trips.push(t);
+  var date = document.getElementById('m-sch-date') ? document.getElementById('m-sch-date').value : todayStr();
+  var text = document.getElementById('m-sch-text') ? document.getElementById('m-sch-text').value.trim() : '';
+  if(!date){alert('請選擇日期');return;}
+  if(!text){alert('請貼上班表內容');return;}
+  var parsed = parseWholeSheet(text);
+  if(!parsed || !Object.keys(parsed).length){
+    alert('無法辨識司機名字，請確認班表包含「司機：」或「姓名：」欄位');
+    return;
+  }
+  if(!schedules[date]) schedules[date] = { drivers:{}, updatedAt:nowDtStr() };
+  Object.keys(parsed).forEach(function(name){
+    schedules[date].drivers[name] = { trips: parsed[name], updatedAt: nowDtStr() };
   });
-
-  if(!schedules[date]) schedules[date] = { drivers: {}, updatedAt: nowDtStr() };
-  if(!schedules[date].drivers) schedules[date].drivers = {};
-  schedules[date].drivers[driverName] = { trips: trips, updatedAt: nowDtStr() };
   schedules[date].updatedAt = nowDtStr();
-
   saveSchedules();
   closeModal();
   renderSchedule();
-  alert('已儲存 ' + driverName + ' ' + date + ' 的班表（共 ' + trips.length + ' 趟）');
+  alert('\u6210\u529f\u532f\u5165 '+Object.keys(parsed).length+' \u4f4d\u53f8\u6a5f\u7684\u73ed\u8868');
 }
 
-function renderSchedule(){
-  setupScheduleUI();
-  var el = document.getElementById('schedule-content');
-  if(!el) return;
-  el.innerHTML = '';
-
-  var date = document.getElementById('schedule-date-filter') ? document.getElementById('schedule-date-filter').value : todayStr();
-  if(!date){ el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">請選擇日期</div>'; return; }
-
-  var sch = schedules[date];
-  var driversData = sch && sch.drivers ? sch.drivers : {};
-  var driverNames = Object.keys(driversData);
-
-  // For driver: only show own data
-  if(currentRole === 'driver'){
-    var myName = currentUser.name;
-    driverNames = driverNames.filter(function(n){ return n === myName || n.indexOf(myName) >= 0; });
-    if(!driverNames.length){
-      el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">'+date+' 尚無您的班表資料</div>';
-      return;
-    }
-  }
-
-  if(!driverNames.length){
-    el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">'+date+' 尚無班表資料'+(currentRole==='admin'?'，請點「+ 新增司機班表」':'')+'</div>';
-    return;
-  }
-
-  var header = document.createElement('div');
-  header.style.cssText='font-size:13px;font-weight:500;color:var(--text-secondary);margin-bottom:10px;padding-bottom:8px;border-bottom:0.5px solid var(--border-light)';
-  header.textContent = date + ' 班表（共 ' + driverNames.length + ' 位司機）';
-  el.appendChild(header);
-
-  driverNames.forEach(function(driverName){
-    var block = driversData[driverName];
-    var div = document.createElement('div');
-    div.className = 'schedule-driver-block schedule-day';
-    
-    // Driver header
-    var dh = document.createElement('div');
-    dh.className = 'schedule-driver-header';
-    var blockTrips = block.trips || [];
-    dh.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>'
-      +'<span class="schedule-driver-name">'+driverName+'</span>'
-      +'<span style="font-size:11px;color:var(--blue-text);margin-left:auto">'+blockTrips.length+' 趟</span>'
-      +(currentRole==='admin'?'<button class="sch-add-trip-btn" style="font-size:10px;padding:2px 8px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--blue-bg);color:var(--blue-text);cursor:pointer;margin-left:8px">+ 新增車趟</button>':'')
-      +(currentRole==='admin'?'<button class="sch-del-btn" style="font-size:10px;padding:2px 8px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--red-bg);color:var(--red-text);cursor:pointer;margin-left:4px">刪除班表</button>':'');
-    div.appendChild(dh);
-
-    // Attach delete handler via JS (not inline onclick, to support Chinese names)
-    var delBtn = dh.querySelector('.sch-del-btn');
-    if(delBtn){
-      (function(d, n){
-        delBtn.onclick = function(e){
-          e.stopPropagation();
-          if(!confirm('確認刪除 '+n+' '+d+' 的班表？')) return;
-          if(schedules[d] && schedules[d].drivers){
-            delete schedules[d].drivers[n];
-            if(Object.keys(schedules[d].drivers).length === 0) delete schedules[d];
-          }
-          saveSchedules();
-          renderSchedule();
-        };
-      })(date, driverName);
-    }
-    var addTripBtn = dh.querySelector('.sch-add-trip-btn');
-    if(addTripBtn){
-      (function(d, n){
-        addTripBtn.onclick = function(e){
-          e.stopPropagation();
-          openTripItemModal(d, n, -1, '');
-        };
-      })(date, driverName);
-    }
-
-    var tripArea = document.createElement('div');
-    tripArea.className = 'schedule-trips';
-
-    if(!blockTrips.length){
-      var empty = document.createElement('div');
-      empty.className = 'schedule-empty';
-      empty.textContent = '無車趟資料';
-      tripArea.appendChild(empty);
-    } else {
-      blockTrips.forEach(function(trip, ti){
-        var item = document.createElement('div');
-        item.className = 'schedule-trip-item';
-        item.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:7px 10px;justify-content:space-between';
-
-        // Trip content
-        var tripContent = document.createElement('div');
-        tripContent.style.cssText = 'flex:1;cursor:pointer;min-width:0';
-        var timeMatch = trip.match(/^(\d{4})\s*(.*)/);
-        if(timeMatch){
-          var span = document.createElement('span');
-          span.style.cssText='font-family:monospace;font-weight:500;color:var(--blue-text);margin-right:8px';
-          span.textContent = timeMatch[1].slice(0,2)+':'+timeMatch[1].slice(2);
-          tripContent.appendChild(span);
-          tripContent.appendChild(document.createTextNode(timeMatch[2]));
-        } else {
-          tripContent.textContent = trip;
-        }
-
-        // Action buttons (admin only)
-        var actionDiv = document.createElement('div');
-        actionDiv.style.cssText = 'display:flex;gap:4px;flex-shrink:0;margin-top:1px';
-
-        if(currentRole === 'admin'){
-          var editBtn = document.createElement('button');
-          editBtn.textContent = '編輯';
-          editBtn.style.cssText = 'font-size:10px;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--blue-bg);color:var(--blue-text);cursor:pointer';
-          var delBtn2 = document.createElement('button');
-          delBtn2.textContent = '刪除';
-          delBtn2.style.cssText = 'font-size:10px;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--red-bg);color:var(--red-text);cursor:pointer';
-          actionDiv.appendChild(editBtn);
-          actionDiv.appendChild(delBtn2);
-
-          (function(tripIdx, tripText){
-            editBtn.onclick = function(e){
-              e.stopPropagation();
-              openTripItemModal(date, driverName, tripIdx, tripText);
-            };
-            delBtn2.onclick = function(e){
-              e.stopPropagation();
-              if(!confirm('確認刪除此車趟？')) return;
-              schedules[date].drivers[driverName].trips.splice(tripIdx, 1);
-              saveSchedules();
-              renderSchedule();
-            };
-          })(ti, trip);
-        }
-
-        // Note expand (click on content)
-        var noteArea = document.createElement('div');
-        noteArea.style.display = 'none';
-        noteArea.style.marginTop = '6px';
-
-        (function(tripIdx){
-          tripContent.onclick = function(){
-            var noteKey = date+'__'+driverName+'__'+tripIdx;
-            var existingNote = (schedules[date]&&schedules[date].notes&&schedules[date].notes[noteKey])||'';
-            if(noteArea.style.display !== 'none'){
-              noteArea.style.display = 'none';
-              item.classList.remove('expanded');
-            } else {
-              noteArea.style.display = 'block';
-              item.classList.add('expanded');
-              noteArea.innerHTML = '';
-              var lbl = document.createElement('div');
-              lbl.style.cssText='font-size:11px;color:var(--amber-text);margin-bottom:4px;font-weight:500';
-              lbl.textContent='備註';
-              noteArea.appendChild(lbl);
-              var ta = document.createElement('textarea');
-              ta.style.cssText='width:100%;border:0.5px solid rgba(0,0,0,.15);border-radius:4px;padding:6px;font-size:12px;background:transparent;color:var(--amber-text);resize:none;min-height:60px';
-              ta.placeholder='輸入備註...';
-              ta.value = existingNote;
-              if(currentRole !== 'admin') ta.readOnly = true;
-              noteArea.appendChild(ta);
-              if(currentRole === 'admin'){
-                var saveBtn2 = document.createElement('button');
-                saveBtn2.textContent = '儲存備註';
-                saveBtn2.style.cssText='font-size:11px;padding:3px 10px;border:0.5px solid rgba(0,0,0,.2);border-radius:4px;background:rgba(0,0,0,.06);cursor:pointer;color:var(--amber-text);margin-top:6px';
-                saveBtn2.onclick = function(e2){
-                  e2.stopPropagation();
-                  if(!schedules[date].notes) schedules[date].notes={};
-                  schedules[date].notes[noteKey] = ta.value;
-                  saveSchedules();
-                  alert('備註已儲存');
-                };
-                noteArea.appendChild(saveBtn2);
-              }
-            }
-          };
-        })(ti);
-
-        var itemInner = document.createElement('div');
-        itemInner.style.cssText='flex:1;min-width:0';
-        itemInner.appendChild(tripContent);
-        itemInner.appendChild(noteArea);
-
-        item.appendChild(itemInner);
-        item.appendChild(actionDiv);
-        tripArea.appendChild(item);
-      });
-    }
-    div.appendChild(tripArea);
-    el.appendChild(div);
+function parseWholeSheet(text){
+  var rows = text.split('\n').map(function(r){ return r.split('\t'); });
+  var maxCols = 0;
+  rows.forEach(function(r){ if(r.length>maxCols) maxCols=r.length; });
+  rows = rows.map(function(r){
+    while(r.length<maxCols) r.push('');
+    return r.map(function(c){ return c.replace(/\r/g,''); });
   });
+
+  // Find driver name for each column
+  var driverNameByCol = {};
+  // Keywords: 司機：姓名：
+  var driverKWs = ['\u53f8\u6a5f\uff1a','\u53f8\u6a5f:','\u59d3\u540d\uff1a','\u59d3\u540d:'];
+  rows.forEach(function(row){
+    row.forEach(function(cell, col){
+      var c = cell.trim();
+      driverKWs.forEach(function(kw){
+        if(c.indexOf(kw)===0 && !driverNameByCol[col]){
+          var name = c.slice(kw.length).trim();
+          // Remove (location) in parentheses
+          name = name.replace(/\s*[\u0028\uff08][^\u0029\uff09]*[\u0029\uff09]/,'').trim();
+          if(name) driverNameByCol[col] = name;
+        }
+      });
+    });
+  });
+
+  if(!Object.keys(driverNameByCol).length) return {};
+
+  // Info row keywords to skip: 電話 車號 車牌 車型 排班 月薪 保
+  var skipKWs = ['\u96fb\u8a71','\u8eca\u865f','\u8eca\u724c','\u8eca\u578b','\u6392\u73ed','\u6708\u85aa','\u4fdd','\u53f8\u6a5f','\u59d3\u540d'];
+
+  var result = {};
+  Object.keys(driverNameByCol).forEach(function(col){
+    var name = driverNameByCol[col];
+    result[name] = [];
+    rows.forEach(function(row){
+      var cell = (row[col]||'').trim();
+      if(!cell) return;
+      var skip = false;
+      skipKWs.forEach(function(kw){ if(cell.indexOf(kw)===0) skip=true; });
+      // Skip date range headers like 05-19 月薪司機
+      if(/^[0-9]{2}-[0-9]{2}/.test(cell) && cell.length<15) skip=true;
+      if(skip) return;
+      // Accept rows starting with 4-digit time
+      if(/^[0-9]{4}/.test(cell)){
+        result[name].push(cell);
+      }
+    });
+  });
+
+  // Remove drivers with no trips
+  Object.keys(result).forEach(function(name){
+    if(!result[name].length) delete result[name];
+  });
+  return result;
 }
 
 
-
-// ─── Mobile navigation ────────────────────────────────────────
-function updateMobileNav(panel){
-  document.querySelectorAll('.mobile-nav-item').forEach(function(b){b.classList.remove('active');});
-  var btn = document.getElementById('mob-nav-'+panel);
-  if(btn) btn.classList.add('active');
-}
-function toggleMobileMore(){
-  var m = document.getElementById('mobile-more-menu');
-  if(m) m.style.display = m.style.display==='none'?'block':'none';
-}
-function hideMobileMore(){
-  var m = document.getElementById('mobile-more-menu');
-  if(m) m.style.display='none';
-}
-function setupMobileNav(){
-  var adminBtns = document.getElementById('mob-admin-btns');
-  if(adminBtns) adminBtns.style.display = currentRole==='admin'?'block':'none';
-}
-
-// ─── Keyboard shortcut ─────────────────────────────────────────
-document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
-
-// ─── Enter key login ───────────────────────────────────────────
-document.getElementById('login-pw').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
-
-// ─── Auto login if session valid ───────────────────────────────
-checkSession();
-</script>
-</body>
-</html>
