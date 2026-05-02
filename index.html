@@ -1285,17 +1285,6 @@ function saveSchedules(){
   window._fb.fbSet('schedules', schedules);
 }
 
-function deleteDriverSchedule(e, date, driverName){
-  e.stopPropagation();
-  if(!confirm('確認刪除 '+driverName+' '+date+' 的班表？')) return;
-  if(schedules[date] && schedules[date].drivers){
-    delete schedules[date].drivers[driverName];
-    if(Object.keys(schedules[date].drivers).length === 0) delete schedules[date];
-  }
-  saveSchedules();
-  renderSchedule();
-}
-
 function scheduleNavDay(delta){
   var el = document.getElementById('schedule-date-filter');
   var d = el.value ? new Date(el.value) : new Date();
@@ -1410,8 +1399,25 @@ function renderSchedule(){
     dh.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>'
       +'<span class="schedule-driver-name">'+driverName+'</span>'
       +'<span style="font-size:11px;color:var(--blue-text);margin-left:auto">'+blockTrips.length+' 趟</span>'
-      +(currentRole==='admin'?'<button onclick="deleteDriverSchedule(event,\"'+date+'\",\"'+driverName+'\")" style="font-size:10px;padding:2px 8px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--red-bg);color:var(--red-text);cursor:pointer;margin-left:8px">刪除</button>':'');
+      +(currentRole==='admin'?'<button class="sch-del-btn" style="font-size:10px;padding:2px 8px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--red-bg);color:var(--red-text);cursor:pointer;margin-left:8px">刪除</button>':'');
     div.appendChild(dh);
+
+    // Attach delete handler via JS (not inline onclick, to support Chinese names)
+    var delBtn = dh.querySelector('.sch-del-btn');
+    if(delBtn){
+      (function(d, n){
+        delBtn.onclick = function(e){
+          e.stopPropagation();
+          if(!confirm('確認刪除 '+n+' '+d+' 的班表？')) return;
+          if(schedules[d] && schedules[d].drivers){
+            delete schedules[d].drivers[n];
+            if(Object.keys(schedules[d].drivers).length === 0) delete schedules[d];
+          }
+          saveSchedules();
+          renderSchedule();
+        };
+      })(date, driverName);
+    }
 
     var tripArea = document.createElement('div');
     tripArea.className = 'schedule-trips';
