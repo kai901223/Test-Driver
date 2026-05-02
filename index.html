@@ -351,7 +351,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="panel-schedule" class="panel">
         <div class="toolbar">
           <span class="toolbar-title">班表</span>
-          <span id="schedule-add-btn-wrap"></span>
+          <button class="btn btn-primary" id="schedule-import-btn" onclick="openSchedulePasteModal()">+ 新增司機班表</button>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
           <input type="date" class="form-input" id="schedule-date-filter" style="width:150px" onchange="renderSchedule()">
@@ -1305,14 +1305,8 @@ function scheduleNavDay(delta){
 function setupScheduleUI(){
   var df = document.getElementById('schedule-date-filter');
   if(df && !df.value) df.value = todayStr();
-  var wrap = document.getElementById('schedule-add-btn-wrap');
-  if(wrap){
-    if(currentRole === 'admin'){
-      wrap.innerHTML = '<button class="btn btn-primary" onclick="openSchedulePasteModal()">+ 新增司機班表</button>';
-    } else {
-      wrap.innerHTML = '';
-    }
-  }
+  var btn = document.getElementById('schedule-import-btn');
+  if(btn) btn.style.display = currentRole==='admin' ? '' : 'none';
 }
 
 // ── Parse pasted Google Sheet text ───────────────────────────
