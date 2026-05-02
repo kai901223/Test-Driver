@@ -148,11 +148,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* Info note */
 .info-note{font-size:11px;color:var(--text-secondary);padding:7px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);margin-bottom:10px}
 
-@media(max-width:600px){
+@media(max-width:768px){
   .sidebar{display:none}
-  .content{padding:12px}
+  .content{padding:12px;padding-bottom:72px}
   .cal-day{min-height:52px;padding:3px 4px}
   .cal-num{font-size:11px}
+  .schedule-trip-item{flex-direction:column;gap:4px}
+}
+/* Mobile bottom navigation */
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--bg-primary);border-top:0.5px solid var(--border-light);z-index:50;padding:4px 0 env(safe-area-inset-bottom,0)}
+.mobile-nav-inner{display:flex;justify-content:space-around;align-items:center}
+.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;cursor:pointer;border-radius:var(--radius-md);min-width:52px;border:none;background:none;color:var(--text-secondary)}
+.mobile-nav-item.active{color:var(--blue-text)}
+.mobile-nav-item svg{width:20px;height:20px}
+.mobile-nav-item span{font-size:10px;font-weight:500}
+@media(max-width:768px){
+  .mobile-nav{display:block}
 }
 .schedule-day{background:var(--bg-primary);border:0.5px solid var(--border-light);border-radius:var(--radius-lg);margin-bottom:12px;overflow:hidden}
 .schedule-day-header{padding:10px 14px;background:var(--bg-secondary);border-bottom:0.5px solid var(--border-light);display:flex;align-items:center;justify-content:space-between;cursor:pointer}
@@ -368,6 +379,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
   </div>
 </div>
+
+<!-- Mobile Bottom Navigation -->
+<nav class="mobile-nav">
+  <div class="mobile-nav-inner">
+    <button class="mobile-nav-item active" id="mob-nav-calendar" onclick="showPanel('calendar',null);updateMobileNav('calendar')">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="3" width="14" height="11" rx="1.5"/><line x1="1" y1="6" x2="15" y2="6"/><line x1="5" y1="1" x2="5" y2="5"/><line x1="11" y1="1" x2="11" y2="5"/></svg>
+      <span>月曆</span>
+    </button>
+    <button class="mobile-nav-item" id="mob-nav-schedule" onclick="showPanel('schedule',null);updateMobileNav('schedule')">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="2" width="14" height="12" rx="1.5"/><line x1="1" y1="6" x2="15" y2="6"/><line x1="5" y1="2" x2="5" y2="6"/><line x1="11" y1="2" x2="11" y2="6"/><line x1="4" y1="9" x2="8" y2="9"/><line x1="4" y1="11.5" x2="10" y2="11.5"/></svg>
+      <span>班表</span>
+    </button>
+    <button class="mobile-nav-item" id="mob-nav-leave" onclick="showPanel('leave',null);updateMobileNav('leave')">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><line x1="8" y1="5" x2="8" y2="8"/><line x1="8" y1="8" x2="10.5" y2="10.5"/></svg>
+      <span>休假</span>
+    </button>
+    <button class="mobile-nav-item" id="mob-nav-trip" onclick="showPanel('trip',null);updateMobileNav('trip')">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 12h14M3 12V7l2-4h6l2 4v5"/><rect x="5" y="9" width="2" height="3"/><rect x="9" y="9" width="2" height="3"/></svg>
+      <span>私趟</span>
+    </button>
+    <button class="mobile-nav-item" id="mob-nav-more" onclick="toggleMobileMore()">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="3" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="13" cy="8" r="1.2" fill="currentColor"/></svg>
+      <span>更多</span>
+    </button>
+  </div>
+  <!-- More menu -->
+  <div id="mobile-more-menu" style="display:none;border-top:0.5px solid var(--border-light);padding:8px 12px;display:none">
+    <button class="mobile-nav-item" style="flex-direction:row;gap:8px;width:100%;justify-content:flex-start;padding:10px 8px" onclick="showPanel('dispatch',null);updateMobileNav('dispatch');hideMobileMore()">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" width="18" height="18"><rect x="2" y="3" width="12" height="10" rx="1.5"/><line x1="2" y1="7" x2="14" y2="7"/><line x1="5" y1="10" x2="11" y2="10"/></svg>
+      <span style="font-size:13px">欲派單</span>
+    </button>
+    <button class="mobile-nav-item" style="flex-direction:row;gap:8px;width:100%;justify-content:flex-start;padding:10px 8px" onclick="showPanel('oil',null);updateMobileNav('oil');hideMobileMore()">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" width="18" height="18"><path d="M4 14V5l4-3 4 3v9H4z"/><line x1="4" y1="8" x2="12" y2="8"/></svg>
+      <span style="font-size:13px">機油</span>
+    </button>
+    <div id="mob-admin-btns" style="display:none">
+      <button class="mobile-nav-item" style="flex-direction:row;gap:8px;width:100%;justify-content:flex-start;padding:10px 8px" onclick="showPanel('drivers',null);updateMobileNav('drivers');hideMobileMore()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" width="18" height="18"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>
+        <span style="font-size:13px">司機帳號</span>
+      </button>
+      <button class="mobile-nav-item" style="flex-direction:row;gap:8px;width:100%;justify-content:flex-start;padding:10px 8px" onclick="showPanel('allrecords',null);updateMobileNav('allrecords');hideMobileMore()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" width="18" height="18"><line x1="3" y1="4" x2="13" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="3" y1="12" x2="9" y2="12"/></svg>
+        <span style="font-size:13px">全部紀錄</span>
+      </button>
+    </div>
+  </div>
+</nav>
+
 </div>
 
 <!-- Modal Overlay -->
@@ -536,6 +595,7 @@ function startApp(){
   // Set body class for role-based CSS
   document.body.classList.remove('role-admin','role-driver');
   document.body.classList.add(currentRole==='admin'?'role-admin':'role-driver');
+  setupMobileNav();
   setupUI();renderAll();
   // Real-time sync
   setupRealtimeListeners();
@@ -1581,6 +1641,25 @@ function renderSchedule(){
 }
 
 
+
+// ─── Mobile navigation ────────────────────────────────────────
+function updateMobileNav(panel){
+  document.querySelectorAll('.mobile-nav-item').forEach(function(b){b.classList.remove('active');});
+  var btn = document.getElementById('mob-nav-'+panel);
+  if(btn) btn.classList.add('active');
+}
+function toggleMobileMore(){
+  var m = document.getElementById('mobile-more-menu');
+  if(m) m.style.display = m.style.display==='none'?'block':'none';
+}
+function hideMobileMore(){
+  var m = document.getElementById('mobile-more-menu');
+  if(m) m.style.display='none';
+}
+function setupMobileNav(){
+  var adminBtns = document.getElementById('mob-admin-btns');
+  if(adminBtns) adminBtns.style.display = currentRole==='admin'?'block':'none';
+}
 
 // ─── Keyboard shortcut ─────────────────────────────────────────
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
