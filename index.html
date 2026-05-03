@@ -1670,9 +1670,36 @@ function parseWholeSheet(text){
   return result;
 }
 
+// ─── Mobile navigation ────────────────────────────────────────
+function updateMobileNav(panel){
+  document.querySelectorAll('.mobile-nav-item').forEach(function(b){b.classList.remove('active');});
+  var btn=document.getElementById('mob-nav-'+panel);
+  if(btn)btn.classList.add('active');
+}
+function toggleMobileMore(){
+  var m=document.getElementById('mobile-more-menu');
+  if(m)m.style.display=m.style.display==='none'?'block':'none';
+}
+function hideMobileMore(){
+  var m=document.getElementById('mobile-more-menu');
+  if(m)m.style.display='none';
+}
+function setupMobileNav(){
+  var adminBtns=document.getElementById('mob-admin-btns');
+  if(adminBtns)adminBtns.style.display=currentRole==='admin'?'block':'none';
+}
+
+// ─── Keyboard shortcut ────────────────────────────────────────
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
+
+// ─── Enter key login ──────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',function(){
+  var pw=document.getElementById('login-pw');
+  if(pw)pw.addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
+});
+
 // ─── Auto init ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function(){
-  // Small delay to ensure Firebase SDK is fully ready
   setTimeout(function(){
     checkSession();
   }, 300);
