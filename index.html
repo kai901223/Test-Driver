@@ -1577,18 +1577,18 @@ function setupScheduleUI(){
 
 
 function openSchedulePasteModal(){
-  var driverOpts = drivers.filter(function(d){return d.active;})
-    .map(function(d){return '<option value="'+d.id+'|'+d.name+'">'+d.name+'</option>';}).join('');
   var curDate = document.getElementById('schedule-date-filter') ? document.getElementById('schedule-date-filter').value : todayStr();
   openModal(
-    '<div class="modal-title">新增司機班表</div>'
-    +'<div class="form-row"><label class="form-label">日期</label><input class="form-input" type="date" id="m-sch-date" value="'+curDate+'"></div>'
-    +'<div class="form-row"><label class="form-label">司機</label><select class="form-input" id="m-sch-driver">'+driverOpts+'</select></div>'
-    +'<div class="form-row"><label class="form-label">班表內容（從 Google Sheet 複製該司機的班表欄位後貼上）</label>'
-    +'<textarea class="paste-area" id="m-sch-text" placeholder="直接貼上文字內容，每行一筆車趟，例如：&#10;0550 送蘆竹Ｏ(EUK749204)&#10;1755 接士林Ｏ 舉牌 休旅" style="min-height:160px"></textarea></div>'
+    '<div class="modal-title">匯入班表（整張）</div>'
+    +'<div class="form-row"><label class="form-label">日期</label>'
+    +'<input class="form-input" type="date" id="m-sch-date" value="'+curDate+'"></div>'
+    +'<div class="form-row"><label class="form-label">貼上整張班表</label>'
+    +'<div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px">Google Sheet → Cmd+A 全選 → Cmd+C 複製 → 貼入下方</div>'
+    +'<textarea class="paste-area" id="m-sch-text" placeholder="貼上整張班表內容..." style="min-height:200px;font-size:11px;font-family:monospace"></textarea></div>'
+    +'<div style="font-size:11px;color:var(--text-secondary);padding:4px 0">系統自動辨識「司機：」或「姓名：」欄位對應各司機</div>'
     +'<div class="modal-footer">'
     +'<button class="btn" onclick="closeModal()">取消</button>'
-    +'<button class="btn btn-primary" onclick="saveSchedule()">儲存</button>'
+    +'<button class="btn btn-primary" onclick="saveSchedule()">匯入</button>'
     +'</div>'
   );
 }
