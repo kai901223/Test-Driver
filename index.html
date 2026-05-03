@@ -1670,4 +1670,11 @@ function parseWholeSheet(text){
   return result;
 }
 
+// ─── Auto init ────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function(){
+  // Small delay to ensure Firebase SDK is fully ready
+  setTimeout(function(){
+    checkSession();
+  }, 300);
+});
 
