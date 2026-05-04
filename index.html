@@ -1390,6 +1390,12 @@ function saveTripItem(){
   } else {
     trips[ctx.tripIdx] = text;
   }
+  // Re-sort by time
+  trips.sort(function(a,b){
+    var ta=parseInt((a.match(/^(\d{4})/)||['0','0'])[1]);
+    var tb=parseInt((b.match(/^(\d{4})/)||['0','0'])[1]);
+    return ta-tb;
+  });
   saveSchedules();
   closeModal();
   renderSchedule();
@@ -1603,15 +1609,39 @@ function saveSchedule(){
     alert('無法辨識司機名字，請確認班表包含「司機：」或「姓名：」欄位');
     return;
   }
+  // Match parsed names against registered drivers
+  var matched = {};
+  var unmatched = [];
+  Object.keys(parsed).forEach(function(parsedName){
+    var found = drivers.find(function(d){
+      return d.name === parsedName || d.name.indexOf(parsedName) >= 0 || parsedName.indexOf(d.name) >= 0;
+    });
+    if(found){ matched[found.name] = parsed[parsedName]; }
+    else { unmatched.push(parsedName); }
+  });
+
+  if(!Object.keys(matched).length){
+    alert('無法匹配任何司機帳號。\n班表中的名字：' + Object.keys(parsed).join('、') + '\n請確認系統帳號姓名與班表一致。');
+    return;
+  }
+  if(unmatched.length){
+    if(!confirm('以下名字無法匹配帳號，將不匯入：\n' + unmatched.join('、') + '\n\n是否繼續匯入已匹配的 ' + Object.keys(matched).length + ' 位司機？')) return;
+  }
+
   if(!schedules[date]) schedules[date] = { drivers:{}, updatedAt:nowDtStr() };
-  Object.keys(parsed).forEach(function(name){
-    schedules[date].drivers[name] = { trips: parsed[name], updatedAt: nowDtStr() };
+  Object.keys(matched).forEach(function(name){
+    var sorted = matched[name].slice().sort(function(a,b){
+      var ta=parseInt((a.match(/^[0-9]{4}/)||['0'])[0])||0;
+      var tb=parseInt((b.match(/^[0-9]{4}/)||['0'])[0])||0;
+      return ta-tb;
+    });
+    schedules[date].drivers[name] = { trips: sorted, updatedAt: nowDtStr() };
   });
   schedules[date].updatedAt = nowDtStr();
   saveSchedules();
   closeModal();
   renderSchedule();
-  alert('\u6210\u529f\u532f\u5165 '+Object.keys(parsed).length+' \u4f4d\u53f8\u6a5f\u7684\u73ed\u8868');
+  alert('\u6210\u529f\u532f\u5165 '+Object.keys(matched).length+'\u4f4d\u53f8\u6a5f\u7684\u73ed\u8868'+(unmatched.length?' (\u672a\u5339\u914d'+unmatched.length+'\u4f4d)':''));
 }
 
 function parseWholeSheet(text){
