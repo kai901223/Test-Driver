@@ -387,7 +387,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     
     <button class="mobile-nav-item" style="flex-direction:row;gap:8px;width:100%;justify-content:flex-start;padding:10px 8px" onclick="showPanel('oil',null);updateMobileNav('oil');hideMobileMore()">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" width="18" height="18"><path d="M4 14V5l4-3 4 3v9H4z"/><line x1="4" y1="8" x2="12" y2="8"/></svg>
-      <span style="font-size:13px">機油</span>
+      <span style="font-size:13px">機油管理</span>
     </button>
     <div id="mob-admin-btns" style="display:none">
       <button class="mobile-nav-item" style="flex-direction:row;gap:8px;width:100%;justify-content:flex-start;padding:10px 8px" onclick="showPanel('drivers',null);updateMobileNav('drivers');hideMobileMore()">
@@ -1001,7 +1001,7 @@ function renderAllRecords(filter){
     var desc=item._type==='leave'?(item.type==='full'?'整日休假':'部分休假 '+item.startTime+'-'+item.endTime):
              item._type==='trip'?renderTripDesc(item):
              item._type==='dispatch'?renderTripDesc(item)+' ｜ 航班:'+item.flight+' '+item.contact:
-             item.plate+' '+item.bottles+'瓶 $'+item.amount+(item.paid?' 已付':'未付');
+             item.plate+' '+item.bottles+'瓶';
     var timeInfo='';
     if(item.createdAt)timeInfo+='<span style="color:var(--text-muted)">建立 '+item.createdAt+'</span>';
     if(item.updatedAt)timeInfo+=(timeInfo?' · ':'')+'<span style="color:var(--text-muted)">修改 '+item.updatedAt+'</span>';
@@ -1198,8 +1198,7 @@ function openOilModal(prefillDate){
     +'<div class="form-row"><label class="form-label">日期</label><input class="form-input" type="date" id="m-oil-date" value="'+(prefillDate||todayStr())+'"></div>'
     +driverRow
     +'<div class="form-row"><label class="form-label">車牌號碼</label><input class="form-input" id="m-oil-plate" placeholder="ABC-1234"></div>'
-    +'<div class="form-row-3"><div><label class="form-label">瓶數</label><input class="form-input" type="number" id="m-oil-bottles" value="1" min="1"></div>'
-    +'<div><label class="form-label">金額（元）</label><input class="form-input" type="number" id="m-oil-amount" value="2500"></div>'
+    +'<div class="form-row-2"><div><label class="form-label">瓶數</label><input class="form-input" type="number" id="m-oil-bottles" value="1" min="1"></div>'
     +'<div><label class="form-label">付款狀態</label><select class="form-input" id="m-oil-paid"><option value="0">未付款</option><option value="1">已付款</option></select></div></div>'
     +'<div class="modal-footer"><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveOil()">儲存</button></div>');
 }
@@ -1211,7 +1210,7 @@ function saveOil(){
     date:document.getElementById('m-oil-date').value,
     plate:document.getElementById('m-oil-plate').value,
     bottles:parseInt(document.getElementById('m-oil-bottles').value)||1,
-    amount:parseInt(document.getElementById('m-oil-amount').value)||0,
+    amount:0,
     paid:document.getElementById('m-oil-paid').value==='1',createdAt:nowDtStr(),updatedAt:''});
   var _no=oils[oils.length-1];logActivity('oil','新增',_no.driverName+' '+_no.date+' '+_no.plate+' '+_no.bottles+'瓶');
   saveOils();closeModal();renderAll();
@@ -1220,8 +1219,7 @@ function editOil(id){
   var o=oils.find(function(x){return x.id===id;});if(!o)return;
   openModal('<div class="modal-title">編輯機油紀錄</div>'
     +'<div class="form-row"><label class="form-label">車牌號碼</label><input class="form-input" id="m-oil-plate" value="'+o.plate+'"></div>'
-    +'<div class="form-row-3"><div><label class="form-label">瓶數</label><input class="form-input" type="number" id="m-oil-bottles" value="'+o.bottles+'"></div>'
-    +'<div><label class="form-label">金額</label><input class="form-input" type="number" id="m-oil-amount" value="'+o.amount+'"></div>'
+    +'<div class="form-row-2"><div><label class="form-label">瓶數</label><input class="form-input" type="number" id="m-oil-bottles" value="'+o.bottles+'"></div>'
     +'<div><label class="form-label">付款狀態</label><select class="form-input" id="m-oil-paid"><option value="0" '+(o.paid?'':'selected')+'>未付款</option><option value="1" '+(o.paid?'selected':'')+'>已付款</option></select></div></div>'
     +'<div class="modal-footer"><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="updateOil(\''+id+'\')">儲存</button></div>');
 }
@@ -1229,7 +1227,6 @@ function updateOil(id){
   var o=oils.find(function(x){return x.id===id;});if(!o)return;
   o.plate=document.getElementById('m-oil-plate').value;
   o.bottles=parseInt(document.getElementById('m-oil-bottles').value)||1;
-  o.amount=parseInt(document.getElementById('m-oil-amount').value)||0;
   o.paid=document.getElementById('m-oil-paid').value==='1';
   o.updatedAt=nowDtStr();
   logActivity('oil','修改',o.driverName+' '+o.date+' '+o.plate);
