@@ -262,12 +262,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><line x1="8" y1="5" x2="8" y2="8"/><line x1="8" y1="8" x2="10.5" y2="10.5"/></svg>休假管理</div>
     <div class="nav-item" onclick="showPanel('trip',this)" data-panel="trip">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 12h14M3 12V7l2-4h6l2 4v5"/><rect x="5" y="9" width="2" height="3"/><rect x="9" y="9" width="2" height="3"/></svg>私趟登記</div>
-    <div class="nav-item" onclick="showPanel('dispatch',this)" data-panel="dispatch">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="3" width="12" height="10" rx="1.5"/><line x1="2" y1="7" x2="14" y2="7"/><line x1="5" y1="10" x2="11" y2="10"/></svg>欲派單</div>
+
     <div class="nav-item" onclick="showPanel('oil',this)" data-panel="oil">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 14V5l4-3 4 3v9H4z"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="8" y1="5" x2="8" y2="14"/></svg>機油管理</div>
-    <div class="nav-item" onclick="showPanel('schedule',this)" data-panel="schedule">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="2" width="14" height="12" rx="1.5"/><line x1="1" y1="6" x2="15" y2="6"/><line x1="5" y1="2" x2="5" y2="6"/><line x1="11" y1="2" x2="11" y2="6"/><line x1="4" y1="9" x2="8" y2="9"/><line x1="4" y1="11.5" x2="10" y2="11.5"/></svg>班表</div>
+
     <div id="admin-nav" style="display:none">
       <div style="height:0.5px;background:var(--border-light);margin:8px 12px"></div>
       <div class="nav-section">管理員</div>
@@ -324,14 +322,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="trip-list"></div>
     </div>
 
-    <!-- Dispatch -->
-    <div id="panel-dispatch" class="panel">
-      <div class="toolbar"><span class="toolbar-title">欲派單申請</span>
-        <button class="btn btn-primary" onclick="openDispatchModal()">+ 新增申請</button></div>
-      <div id="dispatch-list"></div>
-    </div>
 
-    <!-- Oil -->
     <div id="panel-oil" class="panel">
       <div class="toolbar"><span class="toolbar-title">機油管理</span>
         <button class="btn btn-primary" onclick="openOilModal()">+ 新增紀錄</button></div>
@@ -362,31 +353,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
 
     <!-- Schedule Panel -->
-    <div id="panel-schedule" class="panel">
-        <div class="toolbar">
-          <span class="toolbar-title">班表</span>
-          <button class="btn btn-primary" id="schedule-import-btn" onclick="openSchedulePasteModal()">+ 新增司機班表</button>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
-          <input type="date" class="form-input" id="schedule-date-filter" style="width:150px" onchange="renderSchedule()">
-          <button class="btn" onclick="document.getElementById('schedule-date-filter').value=todayStr();renderSchedule()">今天</button>
-          <button class="btn" onclick="scheduleNavDay(-1)">‹ 前一天</button>
-          <button class="btn" onclick="scheduleNavDay(1)">後一天 ›</button>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary)">
-            <span>期間：</span>
-            <input type="date" class="form-input" id="schedule-range-start" style="width:140px" onchange="renderSchedule()">
-            <span>～</span>
-            <input type="date" class="form-input" id="schedule-range-end" style="width:140px" onchange="renderSchedule()">
-            <button class="btn" onclick="clearScheduleRange()">清除</button>
-          </div>
-          <select class="select-sm" id="schedule-driver-filter" style="display:none" onchange="renderSchedule()">
-            <option value="all">全部司機</option>
-          </select>
-        </div>
-        <div id="schedule-content"></div>
-      </div>
+
 
 
 
@@ -401,10 +368,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="3" width="14" height="11" rx="1.5"/><line x1="1" y1="6" x2="15" y2="6"/><line x1="5" y1="1" x2="5" y2="5"/><line x1="11" y1="1" x2="11" y2="5"/></svg>
       <span>月曆</span>
     </button>
-    <button class="mobile-nav-item" id="mob-nav-schedule" onclick="showPanel('schedule',null);updateMobileNav('schedule')">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="2" width="14" height="12" rx="1.5"/><line x1="1" y1="6" x2="15" y2="6"/><line x1="5" y1="2" x2="5" y2="6"/><line x1="11" y1="2" x2="11" y2="6"/><line x1="4" y1="9" x2="8" y2="9"/><line x1="4" y1="11.5" x2="10" y2="11.5"/></svg>
-      <span>班表</span>
-    </button>
+
     <button class="mobile-nav-item" id="mob-nav-leave" onclick="showPanel('leave',null);updateMobileNav('leave')">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><line x1="8" y1="5" x2="8" y2="8"/><line x1="8" y1="8" x2="10.5" y2="10.5"/></svg>
       <span>休假</span>
@@ -420,10 +384,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
   <!-- More menu -->
   <div id="mobile-more-menu" style="display:none;border-top:0.5px solid var(--border-light);padding:8px 12px;display:none">
-    <button class="mobile-nav-item" style="flex-direction:row;gap:8px;width:100%;justify-content:flex-start;padding:10px 8px" onclick="showPanel('dispatch',null);updateMobileNav('dispatch');hideMobileMore()">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" width="18" height="18"><rect x="2" y="3" width="12" height="10" rx="1.5"/><line x1="2" y1="7" x2="14" y2="7"/><line x1="5" y1="10" x2="11" y2="10"/></svg>
-      <span style="font-size:13px">欲派單</span>
-    </button>
+    
     <button class="mobile-nav-item" style="flex-direction:row;gap:8px;width:100%;justify-content:flex-start;padding:10px 8px" onclick="showPanel('oil',null);updateMobileNav('oil');hideMobileMore()">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" width="18" height="18"><path d="M4 14V5l4-3 4 3v9H4z"/><line x1="4" y1="8" x2="12" y2="8"/></svg>
       <span style="font-size:13px">機油</span>
@@ -652,7 +613,7 @@ function setupRealtimeListeners(){
   });
   db.ref('schedules').on('value', function(snap){
     schedules = snap.val() || {};
-    renderSchedule();
+    
   });
 }
 
@@ -687,7 +648,6 @@ function renderCurrentPanel(){
   renderCal();
   if(id==='panel-leave')renderLeave();
   else if(id==='panel-trip')renderTrip();
-  else if(id==='panel-dispatch')renderDispatch();
   else if(id==='panel-oil')renderOil();
   else if(id==='panel-drivers')renderDriverTable();
   else if(id==='panel-allrecords')renderAllRecords(document.getElementById('allrecords-filter')?document.getElementById('allrecords-filter').value:'all');
@@ -726,10 +686,10 @@ function showPanel(name,el){
   document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
   if(el)el.classList.add('active');
   else document.querySelectorAll('.nav-item').forEach(function(n){if(n.dataset.panel===name)n.classList.add('active');});
-  if(name==='schedule'){setupScheduleUI();renderSchedule();}
+  if(name==='schedule'){setupScheduleUI();}
 }
 
-function renderAll(){renderCal();renderLeave();renderTrip();renderDispatch();renderOil();renderDriverTable();renderAllRecords('all');renderSchedule();}
+function renderAll(){renderCal();renderLeave();renderTrip();renderOil();renderDriverTable();renderAllRecords('all');}
 
 // ─── Calendar ─────────────────────────────────────────────────
 function prevMonth(){calMonth--;if(calMonth<0){calMonth=11;calYear--;}renderCal();}
@@ -886,7 +846,6 @@ function showDayDetail(ds){
   var c=document.getElementById('day-detail-content');c.innerHTML='';
   var myL=leaves.filter(function(l){return l.date===ds;});
   var myT=trips.filter(function(t){return t.date===ds&&(currentRole==='driver'?t.driverId===currentUser.id:true);});
-  var myD=dispatches.filter(function(d){return d.date===ds&&(currentRole==='driver'?d.driverId===currentUser.id:true);});
   var myO=oils.filter(function(o){return o.date===ds&&(currentRole==='driver'?o.driverId===currentUser.id:true);});
 
   function makeCard(title,items,renderFn,addFn){
@@ -912,11 +871,6 @@ function showDayDetail(ds){
     return r;
   },function(d){openTripModal(d);});
 
-  makeCard('欲派單',myD,function(d){
-    var r=document.createElement('div');r.className='record-item';
-    r.innerHTML='<div class="record-dot" style="background:#ba7517"></div><div class="record-body"><div class="record-title">'+renderTripDesc(d)+'</div><div class="record-sub">'+(currentRole==='admin'?d.driverName+' · ':'')+'航班:'+d.flight+' · '+d.contact+' · '+(d.payment==='cash'?'收現':'匯款')+' $'+d.amount+'</div></div><div class="record-actions"><button class="act-btn" onclick="editDispatch(\''+d.id+'\')">編輯</button><button class="act-btn danger" onclick="delDispatch(\''+d.id+'\')">刪除</button></div>';
-    return r;
-  },function(d){openDispatchModal(d);});
 
   makeCard('機油',myO,function(o){
     var r=document.createElement('div');r.className='record-item';
@@ -985,7 +939,7 @@ function renderDriverTable(){
   drivers.forEach(function(d,i){
     var tr=document.createElement('tr');
     tr.innerHTML='<td style="color:var(--text-muted);font-size:11px;text-align:center;width:24px">'+(i+1)+'</td>'+'<td>'+d.name+'</td><td style="font-family:monospace;font-size:12px">'+d.idno+'</td><td>'+d.phone+'</td>'
-      +'<td><span class="status-pill" style="background:'+(d.active?'var(--success-bg)':'var(--bg-tertiary)')+';color:'+(d.active?'var(--success-text)':'var(--text-secondary)')+';">'+(d.active?'在職':'停用')+'</span></td>'
+      +'<td><span class="status-pill" onclick="toggleDriverActive(\''+d.id+'\')" style="cursor:pointer;background:'+(d.active?'var(--success-bg)':'var(--bg-tertiary)')+';color:'+(d.active?'var(--success-text)':'var(--text-secondary)')+';">'+(d.active?'在職':'停用')+'</span></td>'
       +'<td><button class="act-btn" onclick="editDriver(\''+d.id+'\')">編輯</button> <button class="act-btn danger" onclick="delDriver(\''+d.id+'\')">刪除</button></td>';
     tb.appendChild(tr);
   });
@@ -1005,11 +959,11 @@ function renderAllRecords(filter){
     var drv=drivers.find(function(d){return d.id===filter;});
     return drv&&log.summary.indexOf(drv.name)===0;
   });
-  var colors={leave:'#1d9e75',trip:'#378add',dispatch:'#ba7517',oil:'#e24b4a'};
-  var labels={leave:'休假',trip:'私趟',dispatch:'派單',oil:'機油'};
+  var colors={leave:'#1d9e75',trip:'#378add',oil:'#e24b4a'};
+  var labels={leave:'休假',trip:'私趟',oil:'機油'};
   // ── Activity log section (top) ──────────────────
-  var typeLabels2={leave:'休假',trip:'私趟',dispatch:'派單',oil:'機油'};
-  var typeColors2={leave:'#1d9e75',trip:'#378add',dispatch:'#ba7517',oil:'#e24b4a'};
+  var typeLabels2={leave:'休假',trip:'私趟',oil:'機油'};
+  var typeColors2={leave:'#1d9e75',trip:'#378add',oil:'#e24b4a'};
   if(filteredLogs.length){
     var logSec=document.createElement('div');
     logSec.style.cssText='margin-bottom:16px;padding-bottom:12px;border-bottom:0.5px solid var(--border-light)';
@@ -1306,6 +1260,15 @@ function saveDriver(){
   saveDrivers();saveDriverLogs();
   renderDriverTable();rebuildDriverSelects();renderAllRecords('all');
 }
+function toggleDriverActive(id){
+  var d=drivers.find(function(x){return x.id===id;});
+  if(!d)return;
+  d.active=!d.active;
+  driverLogs.push({dt:nowDtStr(),action:d.active?'復職':'停用',name:d.name,by:currentUser.name});
+  saveDrivers();saveDriverLogs();
+  renderDriverTable();rebuildDriverSelects();renderAllRecords('all');
+}
+
 function editDriver(id){
   var d=drivers.find(function(x){return x.id===id;});if(!d)return;
   openModal('<div class="modal-title">編輯司機</div>'
@@ -1398,7 +1361,7 @@ function saveTripItem(){
   });
   saveSchedules();
   closeModal();
-  renderSchedule();
+  
 }
 
 function scheduleNavDay(delta){
@@ -1406,14 +1369,14 @@ function scheduleNavDay(delta){
   var d = el.value ? new Date(el.value) : new Date();
   d.setDate(d.getDate() + delta);
   el.value = gds(d.getFullYear(), d.getMonth(), d.getDate());
-  renderSchedule();
+  
 }
 
 function clearScheduleRange(){
   var s=document.getElementById('schedule-range-start');
   var e=document.getElementById('schedule-range-end');
   if(s)s.value='';if(e)e.value='';
-  renderSchedule();
+  
 }
 
 function renderSchedule(){
@@ -1498,7 +1461,7 @@ function renderSchedule(){
 
       // Attach handlers
       var delBtn=dh.querySelector('.sch-del-btn');
-      if(delBtn){(function(d,n){delBtn.onclick=function(e){e.stopPropagation();if(!confirm('確認刪除 '+n+' '+d+' 的班表？'))return;if(schedules[d]&&schedules[d].drivers){delete schedules[d].drivers[n];if(!Object.keys(schedules[d].drivers).length)delete schedules[d];}saveSchedules();renderSchedule();};})(date,driverName);}
+      if(delBtn){(function(d,n){delBtn.onclick=function(e){e.stopPropagation();if(!confirm('確認刪除 '+n+' '+d+' 的班表？'))return;if(schedules[d]&&schedules[d].drivers){delete schedules[d].drivers[n];if(!Object.keys(schedules[d].drivers).length)delete schedules[d];}saveSchedules();};})(date,driverName);}
       var addTripBtn=dh.querySelector('.sch-add-trip-btn');
       if(addTripBtn){(function(d,n){addTripBtn.onclick=function(e){e.stopPropagation();openTripItemModal(d,n,-1,'');};})(date,driverName);}
 
@@ -1535,7 +1498,7 @@ function renderSchedule(){
             actionDiv.appendChild(editBtn);actionDiv.appendChild(delBtn2);
             (function(tripIdx,tripText){
               editBtn.onclick=function(e){e.stopPropagation();openTripItemModal(date,driverName,tripIdx,tripText);};
-              delBtn2.onclick=function(e){e.stopPropagation();if(!confirm('確認刪除此車趟？'))return;schedules[date].drivers[driverName].trips.splice(tripIdx,1);saveSchedules();renderSchedule();};
+              delBtn2.onclick=function(e){e.stopPropagation();if(!confirm('確認刪除此車趟？'))return;schedules[date].drivers[driverName].trips.splice(tripIdx,1);saveSchedules();};
             })(ti,trip);
           }
 
@@ -1585,12 +1548,12 @@ function setupScheduleUI(){
 function openSchedulePasteModal(){
   var curDate = document.getElementById('schedule-date-filter') ? document.getElementById('schedule-date-filter').value : todayStr();
   openModal(
-    '<div class="modal-title">匯入班表（整張）</div>'
+    '<div class="modal-title">匯入班表（排）</div>'
     +'<div class="form-row"><label class="form-label">日期</label>'
     +'<input class="form-input" type="date" id="m-sch-date" value="'+curDate+'"></div>'
-    +'<div class="form-row"><label class="form-label">貼上整張班表</label>'
-    +'<div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px">Google Sheet → Cmd+A 全選 → Cmd+C 複製 → 貼入下方</div>'
-    +'<textarea class="paste-area" id="m-sch-text" placeholder="貼上整張班表內容..." style="min-height:200px;font-size:11px;font-family:monospace"></textarea></div>'
+    +'<div class="form-row"><label class="form-label">貼上一排班表</label>'
+    +'<div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px">Google Sheet → 選擇一排 → 複製 → 貼入下方</div>'
+    +'<textarea class="paste-area" id="m-sch-text" placeholder="貼上一排班表內容..." style="min-height:200px;font-size:11px;font-family:monospace"></textarea></div>'
     +'<div style="font-size:11px;color:var(--text-secondary);padding:4px 0">系統自動辨識「司機：」或「姓名：」欄位對應各司機</div>'
     +'<div class="modal-footer">'
     +'<button class="btn" onclick="closeModal()">取消</button>'
@@ -1640,7 +1603,7 @@ function saveSchedule(){
   schedules[date].updatedAt = nowDtStr();
   saveSchedules();
   closeModal();
-  renderSchedule();
+  
   alert('\u6210\u529f\u532f\u5165 '+Object.keys(matched).length+'\u4f4d\u53f8\u6a5f\u7684\u73ed\u8868'+(unmatched.length?' (\u672a\u5339\u914d'+unmatched.length+'\u4f4d)':''));
 }
 
