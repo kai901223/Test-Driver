@@ -56,6 +56,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .topbar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .avatar{width:30px;height:30px;border-radius:50%;background:var(--blue-bg);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--blue-text)}
 .role-badge{font-size:11px;padding:2px 8px;border-radius:var(--radius-md);background:var(--green-bg);color:var(--green-text)}
+.notif-btn{position:relative;width:30px;height:30px;border-radius:50%;border:0.5px solid var(--border-mid);background:var(--bg-primary);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.notif-btn:hover{background:var(--bg-secondary)}
+.notif-btn svg{width:15px;height:15px;stroke:var(--text-secondary);fill:none}
+.notif-btn.active{background:var(--blue-bg);border-color:transparent}
+.notif-btn.active svg{stroke:var(--blue-text)}
+.notif-btn.active::after{content:'';position:absolute;top:1px;right:1px;width:7px;height:7px;border-radius:50%;background:#2fae6e;border:1.5px solid var(--bg-primary)}
 .layout{display:flex;flex:1}
 .sidebar{width:172px;background:var(--bg-primary);border-right:0.5px solid var(--border-light);padding:10px 0;flex-shrink:0;position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto}
 .nav-section{padding:5px 14px 2px;font-size:10px;color:var(--text-muted);letter-spacing:.5px;margin-top:6px;text-transform:uppercase}
@@ -247,6 +253,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <option value="all">全部司機</option>
       </select>
     </div>
+    <button class="notif-btn" id="notif-toggle-btn" onclick="openNotifSettings()" title="開啟班表提醒通知">
+      <svg viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    </button>
     <div class="avatar" id="user-avatar">管</div>
     <span style="font-size:13px;color:var(--text-primary)" id="user-name">管理員</span>
     <span class="role-badge" id="user-role-badge">管理員</span>
@@ -588,6 +597,173 @@ function startApp(){
       refreshData();
     }
   }, 30000);
+
+  // 出車確認提醒
+  initNotificationPref();
+  checkScheduleReminders();
+  setInterval(checkScheduleReminders, 20000);
+}
+
+// ─── 出車確認提醒 ────────────────────────────────────────────
+// 流程：出發前60分鐘跳出確認視窗 → 若未確認，出發前45分鐘再跳一次 → 若仍未確認，管理員收到通知
+// 確認狀態存在 Firebase 的 tripConfirmations，讓司機端與管理員端能共享同一份狀態
+var notifyEnabled=false;
+var tripConfirmations={};
+var ADMIN_ALERT_GRACE_MIN=5; // 第二次提醒後，給司機5分鐘緩衝，過了仍未確認才通知管理員
+
+function initNotificationPref(){
+  try{
+    var saved=JSON.parse(localStorage.getItem('baolai_notif_pref')||'null');
+    if(saved) notifyEnabled=!!saved.enabled;
+  }catch(e){}
+  if(notifyEnabled && (!('Notification' in window) || Notification.permission!=='granted')){
+    notifyEnabled=false; // 權限已被收回
+  }
+  updateNotifBtnUI();
+}
+function saveNotifPref(){
+  localStorage.setItem('baolai_notif_pref', JSON.stringify({enabled:notifyEnabled}));
+}
+function updateNotifBtnUI(){
+  var btn=document.getElementById('notif-toggle-btn');
+  if(!btn)return;
+  btn.classList.toggle('active', notifyEnabled);
+  btn.title = notifyEnabled?'出車確認提醒已開啟':'開啟出車確認提醒';
+}
+function openNotifSettings(){
+  openModal(
+    '<div class="modal-title">出車確認提醒</div>'
+    +'<div class="form-row"><label class="radio-opt"><input type="checkbox" id="notif-enable-chk" '+(notifyEnabled?'checked':'')+'> 開啟出車確認提醒</label></div>'
+    +'<div class="hint-box">運作方式：<br>'
+    +'・出發前 <b>60分鐘</b>，跳出視窗請司機按「確認出發」<br>'
+    +'・若司機未確認，出發前 <b>45分鐘</b> 會再跳一次<br>'
+    +'・第二次提醒後 '+ADMIN_ALERT_GRACE_MIN+' 分鐘內司機仍未確認，管理員會收到通知<br><br>'
+    +(currentRole==='driver'?'系統只會提醒您自己的車趟。':'系統會監看所有司機是否已確認出發，未回應時通知您。')
+    +'<br>需保持此分頁維持開啟（可切到背景），關閉分頁後將收不到提醒。</div>'
+    +'<div class="modal-footer"><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveNotifSettings()">儲存</button></div>'
+  );
+}
+function saveNotifSettings(){
+  var chk=document.getElementById('notif-enable-chk').checked;
+  if(!chk){
+    notifyEnabled=false;
+    saveNotifPref();updateNotifBtnUI();closeModal();
+    return;
+  }
+  if(!('Notification' in window)){
+    alert('此瀏覽器不支援通知功能');
+    notifyEnabled=false;saveNotifPref();updateNotifBtnUI();closeModal();
+    return;
+  }
+  if(Notification.permission==='granted'){
+    notifyEnabled=true;saveNotifPref();updateNotifBtnUI();closeModal();
+  } else if(Notification.permission==='denied'){
+    alert('通知權限已被瀏覽器封鎖，請至瀏覽器網站設定手動開啟後再試一次');
+    notifyEnabled=false;saveNotifPref();updateNotifBtnUI();closeModal();
+  } else {
+    Notification.requestPermission().then(function(perm){
+      notifyEnabled = perm==='granted';
+      if(!notifyEnabled) alert('未取得通知權限，請允許通知後再試一次');
+      saveNotifPref();updateNotifBtnUI();closeModal();
+    });
+  }
+}
+
+function tripConfKey(date,driverName,idx){
+  return (date+'_'+driverName+'_'+idx).replace(/[.#$\[\]\/\s]/g,'_');
+}
+
+function tripDiffMinutes(trip,now){
+  var m=trip.match(/^([0-9]{2})([0-9]{2})/);
+  if(!m) return null;
+  var h=parseInt(m[1],10), mi=parseInt(m[2],10);
+  if(h>23||mi>59) return null;
+  var tripDt=new Date(now.getFullYear(),now.getMonth(),now.getDate(),h,mi,0);
+  return { diff:(tripDt-now)/60000, label:m[1]+':'+m[2] };
+}
+
+function checkScheduleReminders(){
+  if(!notifyEnabled) return;
+  if(!('Notification' in window) || Notification.permission!=='granted') return;
+  var today=todayStr();
+  var sch=schedules[today];
+  if(!sch||!sch.drivers) return;
+  var now=new Date();
+  var driverNames=Object.keys(sch.drivers);
+
+  if(currentRole==='driver'){
+    var myName=currentUser.name;
+    driverNames.filter(function(n){return n===myName||n.indexOf(myName)>=0||myName.indexOf(n)>=0;})
+      .forEach(function(name){ checkDriverTripsForSelf(today,name,sch.drivers[name].trips||[],now); });
+  }
+  if(currentRole==='admin'){
+    driverNames.forEach(function(name){ checkDriverTripsForAdmin(today,name,sch.drivers[name].trips||[],now); });
+  }
+}
+
+// 司機端：出發前60分鐘與45分鐘跳出確認視窗
+function checkDriverTripsForSelf(date,name,trips,now){
+  if(document.getElementById('modal-overlay').classList.contains('open')) return; // 避免打斷正在操作的視窗，下次輪詢再試
+  for(var idx=0; idx<trips.length; idx++){
+    var trip=trips[idx];
+    var info=tripDiffMinutes(trip,now);
+    if(!info || info.diff<-1) continue;
+    var key=tripConfKey(date,name,idx);
+    var rec=tripConfirmations[key]||{};
+    if(rec.confirmed) continue;
+
+    if(!rec.remind60At && info.diff<=60){
+      window._fb.fbUpdate('tripConfirmations/'+key, {date:date,driverName:name,idx:idx,tripText:trip,remind60At:nowDtStr(),confirmed:false});
+      showDepartureConfirm(key, false, trip, info.label, info.diff);
+      return; // 一次只彈一個視窗
+    }
+    if(!rec.remind45At && info.diff<=45){
+      window._fb.fbUpdate('tripConfirmations/'+key, {date:date,driverName:name,idx:idx,tripText:trip,remind45At:nowDtStr(),confirmed:false});
+      showDepartureConfirm(key, true, trip, info.label, info.diff);
+      return;
+    }
+  }
+}
+
+// 管理員端：第二次提醒後緩衝時間內仍未確認，發出通知
+function checkDriverTripsForAdmin(date,name,trips,now){
+  trips.forEach(function(trip,idx){
+    var info=tripDiffMinutes(trip,now);
+    if(!info || info.diff<-1) return;
+    var key=tripConfKey(date,name,idx);
+    var rec=tripConfirmations[key]||{};
+    if(rec.confirmed || rec.adminAlerted) return;
+    if(!rec.remind45At) return; // 尚未跳過第二次提醒
+    if(info.diff > 45-ADMIN_ALERT_GRACE_MIN) return; // 還在緩衝期內，給司機時間回應
+
+    window._fb.fbUpdate('tripConfirmations/'+key, {adminAlerted:true, adminAlertedAt:nowDtStr()});
+    try{
+      var n=new Notification('⚠ 司機未確認出發', { body: name+'：'+info.label+' '+trip.replace(/^[0-9]{4}\s*/,''), tag:'admin_'+key });
+      n.onclick=function(){ window.focus(); n.close(); };
+    }catch(e){}
+  });
+}
+
+function showDepartureConfirm(key, isSecondReminder, trip, timeLabel, diffMin){
+  var body=trip.replace(/^[0-9]{4}\s*/,'');
+  var minsLeft=Math.max(0,Math.round(diffMin));
+  openModal(
+    '<div class="modal-title">'+(isSecondReminder?'⚠ 出車提醒（第二次）':'出車提醒')+'</div>'
+    +'<div style="font-size:13px;color:var(--text-primary);margin-bottom:10px">距離 <b>'+timeLabel+'</b> 車趟還有約 '+minsLeft+' 分鐘：</div>'
+    +'<div style="font-size:13px;color:var(--text-secondary);background:var(--bg-secondary);border-radius:8px;padding:10px;margin-bottom:14px">'+body+'</div>'
+    +(isSecondReminder?'<div class="hint-box" style="margin-bottom:12px">若未確認，管理員稍後將收到通知。</div>':'')
+    +'<div class="modal-footer"><button class="btn" onclick="closeModal()">稍後</button><button class="btn btn-primary" onclick="confirmDeparture(\''+key+'\')">確認出發</button></div>'
+  );
+  // 分頁在背景時的輔助通知
+  try{
+    var n=new Notification((isSecondReminder?'出車提醒（第二次）':'出車提醒')+' · '+timeLabel, { body: body, tag:key });
+    n.onclick=function(){ window.focus(); n.close(); };
+  }catch(e){}
+}
+
+function confirmDeparture(key){
+  window._fb.fbUpdate('tripConfirmations/'+key, {confirmed:true, confirmedAt:nowDtStr()});
+  closeModal();
 }
 
 function setupRealtimeListeners(){
@@ -614,6 +790,9 @@ function setupRealtimeListeners(){
   db.ref('schedules').on('value', function(snap){
     schedules = snap.val() || {};
     
+  });
+  db.ref('tripConfirmations').on('value', function(snap){
+    tripConfirmations = snap.val() || {};
   });
 }
 
