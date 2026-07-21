@@ -382,7 +382,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="panel-schedule" class="panel">
       <div class="toolbar">
         <span class="toolbar-title">班表</span>
-        <button class="btn btn-primary" id="schedule-import-btn" onclick="openSchedulePasteModal()">+ 新增司機班表</button>
+        <button class="btn btn-primary" id="schedule-import-btn" onclick="openSchedulePasteModal()">+ 匯入班表（排）</button>
+        <button class="btn" id="schedule-single-btn" onclick="openSingleDriverScheduleModal()" style="display:none">+ 新增單一司機</button>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
         <input type="date" class="form-input" id="schedule-date-filter" style="width:150px" onchange="renderSchedule()">
@@ -1590,6 +1591,46 @@ function setupScheduleUI(){
 // Trip rows contain time + route text
 
 
+function openSingleDriverScheduleModal(){
+  var curDate=document.getElementById('schedule-date-filter')?document.getElementById('schedule-date-filter').value:todayStr();
+  var driverOpts=drivers.filter(function(d){return d.active;})
+    .map(function(d){return '<option value="'+d.name+'">'+d.name+'</option>';}).join('');
+  openModal(
+    '<div class="modal-title">新增單一司機班表</div>'
+    +'<div class="form-row"><label class="form-label">日期</label>'
+    +'<input class="form-input" type="date" id="m-sch-date" value="'+curDate+'"></div>'
+    +'<div class="form-row"><label class="form-label">司機</label>'
+    +'<select class="form-input" id="m-single-driver">'+driverOpts+'</select></div>'
+    +'<div class="form-row"><label class="form-label">班表內容（每行一趟）</label>'
+    +'<textarea class="paste-area" id="m-sch-text" placeholder="0550 送蘆竹Ｏ(EUK749204)&#10;0900 接松山K&#10;..." style="min-height:160px;font-size:12px"></textarea></div>'
+    +'<div style="font-size:11px;color:var(--text-secondary);padding:4px 0">每行一筆車趟，時間格式：0550</div>'
+    +'<div class="modal-footer">'
+    +'<button class="btn" onclick="closeModal()">取消</button>'
+    +'<button class="btn btn-primary" onclick="saveSingleDriverSchedule()">儲存</button>'
+    +'</div>'
+  );
+}
+
+function saveSingleDriverSchedule(){
+  var date=document.getElementById('m-sch-date')?document.getElementById('m-sch-date').value:'';
+  var driverName=document.getElementById('m-single-driver')?document.getElementById('m-single-driver').value:'';
+  var text=document.getElementById('m-sch-text')?document.getElementById('m-sch-text').value.trim():'';
+  if(!date){alert('請選擇日期');return;}
+  if(!driverName){alert('請選擇司機');return;}
+  if(!text){alert('請輸入班表內容');return;}
+  var trips=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>0;});
+  trips.sort(function(a,b){
+    var ta=parseInt((a.match(/^[0-9]{4}/)||['0'])[0])||0;
+    var tb=parseInt((b.match(/^[0-9]{4}/)||['0'])[0])||0;
+    return ta-tb;
+  });
+  if(!schedules[date])schedules[date]={drivers:{},updatedAt:nowDtStr()};
+  schedules[date].drivers[driverName]={trips:trips,updatedAt:nowDtStr()};
+  schedules[date].updatedAt=nowDtStr();
+  saveSchedules();closeModal();renderSchedule();
+  alert('已儲存 '+driverName+' '+date+' 的班表（共 '+trips.length+' 趣）');
+}
+
 function openSchedulePasteModal(){
   var curDate = document.getElementById('schedule-date-filter') ? document.getElementById('schedule-date-filter').value : todayStr();
   openModal(
@@ -1747,6 +1788,28 @@ function requestNotifPermission(){
   }
 }
 
+function playAlertSound(urgent){
+  try{
+    var ctx=new (window.AudioContext||window.webkitAudioContext)();
+    var times=urgent?3:2;
+    for(var i=0;i<times;i++){
+      (function(i){
+        setTimeout(function(){
+          var o=ctx.createOscillator();
+          var g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.frequency.value=urgent?(i%2===0?880:660):660;
+          o.type='sine';
+          g.gain.setValueAtTime(0.4,ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.3);
+          o.start(ctx.currentTime);
+          o.stop(ctx.currentTime+0.3);
+        },i*400);
+      })(i);
+    }
+  }catch(e){}
+}
+
 function sendNotification(title, body, onClick){
   if('Notification' in window && Notification.permission === 'granted'){
     var n = new Notification(title, { body: body, icon: '' });
@@ -1807,6 +1870,8 @@ function showTripAlert(trip, driverName, minutesBefore, date, tripIdx){
   var desc = timeMatch ? timeMatch[2] : trip;
   var isUrgent = minutesBefore <= 45;
 
+  // Play sound
+  playAlertSound(isUrgent);
   // Browser notification
   sendNotification(
     (isUrgent ? '⚠️ 緊急提醒' : '🚗 出發提醒') + ' - ' + timeStr,
@@ -1898,6 +1963,8 @@ function scheduleNavDay(delta){
 function setupScheduleUI(){
   var btn=document.getElementById('schedule-import-btn');
   if(btn) btn.style.display=currentRole==='admin'?'':'none';
+  var singleBtn=document.getElementById('schedule-single-btn');
+  if(singleBtn) singleBtn.style.display=currentRole==='admin'?'':'none';
   var df=document.getElementById('schedule-date-filter');
   if(df&&!df.value) df.value=todayStr();
   var driverFilterSel=document.getElementById('schedule-driver-filter');
@@ -2082,6 +2149,46 @@ function saveTripItem(){
     return ta-tb;
   });
   saveSchedules();closeModal();renderSchedule();
+}
+
+function openSingleDriverScheduleModal(){
+  var curDate=document.getElementById('schedule-date-filter')?document.getElementById('schedule-date-filter').value:todayStr();
+  var driverOpts=drivers.filter(function(d){return d.active;})
+    .map(function(d){return '<option value="'+d.name+'">'+d.name+'</option>';}).join('');
+  openModal(
+    '<div class="modal-title">新增單一司機班表</div>'
+    +'<div class="form-row"><label class="form-label">日期</label>'
+    +'<input class="form-input" type="date" id="m-sch-date" value="'+curDate+'"></div>'
+    +'<div class="form-row"><label class="form-label">司機</label>'
+    +'<select class="form-input" id="m-single-driver">'+driverOpts+'</select></div>'
+    +'<div class="form-row"><label class="form-label">班表內容（每行一趟）</label>'
+    +'<textarea class="paste-area" id="m-sch-text" placeholder="0550 送蘆竹Ｏ(EUK749204)&#10;0900 接松山K&#10;..." style="min-height:160px;font-size:12px"></textarea></div>'
+    +'<div style="font-size:11px;color:var(--text-secondary);padding:4px 0">每行一筆車趟，時間格式：0550</div>'
+    +'<div class="modal-footer">'
+    +'<button class="btn" onclick="closeModal()">取消</button>'
+    +'<button class="btn btn-primary" onclick="saveSingleDriverSchedule()">儲存</button>'
+    +'</div>'
+  );
+}
+
+function saveSingleDriverSchedule(){
+  var date=document.getElementById('m-sch-date')?document.getElementById('m-sch-date').value:'';
+  var driverName=document.getElementById('m-single-driver')?document.getElementById('m-single-driver').value:'';
+  var text=document.getElementById('m-sch-text')?document.getElementById('m-sch-text').value.trim():'';
+  if(!date){alert('請選擇日期');return;}
+  if(!driverName){alert('請選擇司機');return;}
+  if(!text){alert('請輸入班表內容');return;}
+  var trips=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>0;});
+  trips.sort(function(a,b){
+    var ta=parseInt((a.match(/^[0-9]{4}/)||['0'])[0])||0;
+    var tb=parseInt((b.match(/^[0-9]{4}/)||['0'])[0])||0;
+    return ta-tb;
+  });
+  if(!schedules[date])schedules[date]={drivers:{},updatedAt:nowDtStr()};
+  schedules[date].drivers[driverName]={trips:trips,updatedAt:nowDtStr()};
+  schedules[date].updatedAt=nowDtStr();
+  saveSchedules();closeModal();renderSchedule();
+  alert('已儲存 '+driverName+' '+date+' 的班表（共 '+trips.length+' 趣）');
 }
 
 function openSchedulePasteModal(){
