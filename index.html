@@ -620,7 +620,10 @@ function startApp(){
   setupMobileNav();
   setupUI();renderAll();
   requestNotifPermission();
+  // Unlock audio on first interaction
+  document.addEventListener('click',function(){getAudioCtx();},{once:true});
   startNotificationLoop();
+  if(currentRole==='admin') listenAdminAlerts();
   // Real-time sync
   setupRealtimeListeners();
 
@@ -1755,194 +1758,197 @@ function parseWholeSheet(text){
 // ─── Schedule & Notification System ──────────────────────────
 var schedules = {};
 var _tripEditCtx = {};
-var _notifTimers = [];   // store timer IDs for cleanup
-var _notifiedTrips = {}; // track which trips have been notified { "date__driver__idx__60": true }
+var _notifLoop = null;
+var _notifiedKeys = {}; // { "date__driver__ti__60": true }
+var _audioCtx = null;
 
-// ── Taiwan time helpers ───────────────────────────────────────
+// ── Taiwan time ───────────────────────────────────────────────
 function twNow(){
-  // UTC+8
-  var d = new Date();
-  var utc = d.getTime() + d.getTimezoneOffset()*60000;
-  return new Date(utc + 8*3600000);
+  var d=new Date();
+  return new Date(d.getTime()+d.getTimezoneOffset()*60000+8*3600000);
 }
-function twTodayStr(){
-  var d = twNow();
+function todayStrTW(){
+  var d=twNow();
   return d.getFullYear()+'-'+(String(d.getMonth()+1).padStart(2,'0'))+'-'+(String(d.getDate()).padStart(2,'0'));
 }
-function twTimeMinutes(){
-  var d = twNow();
-  return d.getHours()*60 + d.getMinutes();
+function twTimeMin(){
+  var d=twNow();return d.getHours()*60+d.getMinutes();
 }
-function tripTimeMinutes(timeStr){
-  // e.g. "0550" -> 355
-  if(!timeStr) return -1;
-  var m = String(timeStr).match(/^(\d{2})(\d{2})/);
-  if(!m) return -1;
-  return parseInt(m[1])*60 + parseInt(m[2]);
+function tripMin(s){
+  var m=String(s).match(/^(\d{2})(\d{2})/);
+  return m?parseInt(m[1])*60+parseInt(m[2]):-1;
+}
+
+// ── Audio ─────────────────────────────────────────────────────
+function getAudioCtx(){
+  if(!_audioCtx){
+    try{ _audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+  }
+  return _audioCtx;
+}
+
+function playBeep(freq, duration, delay, vol){
+  var ctx=getAudioCtx();
+  if(!ctx)return;
+  try{
+    var o=ctx.createOscillator();
+    var g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.type='sine';
+    o.frequency.value=freq||660;
+    var t=ctx.currentTime+(delay||0);
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(vol||0.5,t+0.05);
+    g.gain.exponentialRampToValueAtTime(0.001,t+(duration||0.3));
+    o.start(t);o.stop(t+(duration||0.3)+0.01);
+  }catch(e){}
+}
+
+function playAlertSound(urgent){
+  if(urgent){
+    // 3 high beeps
+    playBeep(880,0.25,0,0.6);
+    playBeep(880,0.25,0.35,0.6);
+    playBeep(1100,0.4,0.7,0.7);
+  } else {
+    // 2 normal beeps
+    playBeep(660,0.3,0,0.5);
+    playBeep(660,0.3,0.4,0.5);
+  }
 }
 
 // ── Notification permission ───────────────────────────────────
 function requestNotifPermission(){
-  if('Notification' in window && Notification.permission === 'default'){
+  if('Notification' in window && Notification.permission==='default'){
     Notification.requestPermission();
   }
 }
 
-function playAlertSound(urgent){
-  try{
-    var ctx=new (window.AudioContext||window.webkitAudioContext)();
-    var times=urgent?3:2;
-    for(var i=0;i<times;i++){
-      (function(i){
-        setTimeout(function(){
-          var o=ctx.createOscillator();
-          var g=ctx.createGain();
-          o.connect(g);g.connect(ctx.destination);
-          o.frequency.value=urgent?(i%2===0?880:660):660;
-          o.type='sine';
-          g.gain.setValueAtTime(0.4,ctx.currentTime);
-          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.3);
-          o.start(ctx.currentTime);
-          o.stop(ctx.currentTime+0.3);
-        },i*400);
-      })(i);
-    }
-  }catch(e){}
-}
-
-function sendNotification(title, body, onClick){
-  if('Notification' in window && Notification.permission === 'granted'){
-    var n = new Notification(title, { body: body, icon: '' });
-    if(onClick) n.onclick = onClick;
+function sendBrowserNotif(title, body){
+  if('Notification' in window && Notification.permission==='granted'){
+    try{
+      var n=new Notification(title,{body:body,requireInteraction:true});
+      n.onclick=function(){window.focus();n.close();};
+    }catch(e){}
   }
 }
 
-// ── Schedule notification loop ────────────────────────────────
+// ── Notification loop ─────────────────────────────────────────
 function startNotificationLoop(){
-  // Clear old timers
-  _notifTimers.forEach(function(t){ clearInterval(t); });
-  _notifTimers = [];
-  // Check every 30 seconds
-  var tid = setInterval(checkTripNotifications, 30000);
-  _notifTimers.push(tid);
-  checkTripNotifications(); // run immediately
+  if(_notifLoop) clearInterval(_notifLoop);
+  _notifLoop=setInterval(checkNotifications,30000);
+  checkNotifications();
 }
 
-function checkTripNotifications(){
-  var today = twTodayStr();
-  var nowMin = twTimeMinutes();
-  var sch = schedules[today];
-  if(!sch || !sch.drivers) return;
+function checkNotifications(){
+  if(currentRole!=='driver'&&currentRole!=='admin') return;
+  var today=todayStrTW();
+  var sch=schedules[today];
+  if(!sch||!sch.drivers) return;
+  var nowMin=twTimeMin();
 
-  Object.keys(sch.drivers).forEach(function(driverName){
-    var block = sch.drivers[driverName];
-    var trips = block && block.trips ? block.trips : [];
+  // For driver: check own trips
+  if(currentRole==='driver'){
+    var myName=currentUser.name;
+    var block=sch.drivers[myName];
+    if(!block||!block.trips) return;
+    block.trips.forEach(function(trip,ti){
+      var m=trip.match(/^(\d{4})/);
+      if(!m) return;
+      var tMin=tripMin(m[1]);
+      var diff=tMin-nowMin;
 
-    trips.forEach(function(trip, ti){
-      var timeMatch = trip.match(/^(\d{4})/);
-      if(!timeMatch) return;
-      var tripMin = tripTimeMinutes(timeMatch[1]);
-      var diff = tripMin - nowMin; // minutes until trip
+      var k60=today+'__'+myName+'__'+ti+'__60';
+      var k45=today+'__'+myName+'__'+ti+'__45';
 
-      // Only notify if driver is logged in
-      if(currentRole !== 'driver' || currentUser.name !== driverName) return;
-
-      var key60 = today+'__'+driverName+'__'+ti+'__60';
-      var key45 = today+'__'+driverName+'__'+ti+'__45';
-
-      // 60-minute warning
-      if(diff > 0 && diff <= 60 && diff > 45 && !_notifiedTrips[key60]){
-        _notifiedTrips[key60] = true;
-        showTripAlert(trip, driverName, 60, today, ti);
+      if(diff>0&&diff<=60&&diff>55&&!_notifiedKeys[k60]){
+        _notifiedKeys[k60]=true;
+        showTripAlert(trip,myName,60,today,ti,false);
       }
-      // 45-minute warning (only if 60min was ignored)
-      if(diff > 0 && diff <= 45 && diff > 30 && !_notifiedTrips[key45]){
-        _notifiedTrips[key45] = true;
-        showTripAlert(trip, driverName, 45, today, ti);
+      if(diff>0&&diff<=45&&diff>40&&!_notifiedKeys[k45]){
+        _notifiedKeys[k45]=true;
+        showTripAlert(trip,myName,45,today,ti,true);
+        // Schedule admin alert 5 min later if not confirmed
+        setTimeout(function(){
+          var kConf=today+'__'+myName+'__'+ti+'__confirmed';
+          if(!_notifiedKeys[kConf]){
+            // Write to Firebase for admin
+            window._fb.fbPush('adminAlerts',{
+              dt:nowDtStr(),driverName:myName,trip:trip,
+              date:today,tripIdx:ti,read:false
+            });
+          }
+        },5*60*1000);
       }
+    });
+  }
+
+  // For admin: check adminAlerts in Firebase (handled by listener in startApp)
+}
+
+// ── Admin alert listener ──────────────────────────────────────
+function listenAdminAlerts(){
+  if(currentRole!=='admin') return;
+  db.ref('adminAlerts').on('value',function(snap){
+    var alerts=snap.val();
+    if(!alerts) return;
+    Object.keys(alerts).forEach(function(k){
+      var a=alerts[k];
+      if(a.read) return;
+      if(_notifiedKeys['admin_alert_'+k]) return;
+      _notifiedKeys['admin_alert_'+k]=true;
+      // Mark as read
+      db.ref('adminAlerts/'+k+'/read').set(true);
+      // Show admin notification
+      playAlertSound(true);
+      sendBrowserNotif('🚨 司機未確認出發',a.driverName+' 的車趟未確認出發：'+a.trip);
+      openModal(
+        '<div class="modal-title" style="color:var(--red-text)">🚨 司機未確認出發</div>'
+        +'<div style="padding:12px 0;font-size:13px">'
+        +'<strong>'+a.driverName+'</strong> 的車趟未確認出發，請聯繫司機！<br><br>'
+        +'<div style="padding:8px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px">'+a.trip+'</div>'
+        +'</div>'
+        +'<div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">知道了</button></div>'
+      );
     });
   });
 }
 
-function showTripAlert(trip, driverName, minutesBefore, date, tripIdx){
-  var timeMatch = trip.match(/^(\d{4})\s*(.*)/);
-  var timeStr = timeMatch ? timeMatch[1].slice(0,2)+':'+timeMatch[1].slice(2) : '';
-  var desc = timeMatch ? timeMatch[2] : trip;
-  var isUrgent = minutesBefore <= 45;
+// ── Trip alert modal ──────────────────────────────────────────
+function showTripAlert(trip,driverName,minutesBefore,date,tripIdx,urgent){
+  var m=trip.match(/^(\d{4})\s*(.*)/);
+  var timeStr=m?m[1].slice(0,2)+':'+m[1].slice(2):'';
+  var desc=m?m[2]:trip;
 
-  // Play sound
-  playAlertSound(isUrgent);
-  // Browser notification
-  sendNotification(
-    (isUrgent ? '⚠️ 緊急提醒' : '🚗 出發提醒') + ' - ' + timeStr,
-    desc + '\n請於 ' + minutesBefore + ' 分鐘後出發',
-    function(){ window.focus(); }
+  playAlertSound(urgent);
+  sendBrowserNotif(
+    (urgent?'⚠️ 緊急提醒':'🚗 出發提醒')+' '+timeStr,
+    desc+'\n請於 '+minutesBefore+' 分鐘後出發'
   );
 
-  // In-page modal alert
-  var alertHtml = '<div style="text-align:center;padding:8px 0">'
-    +'<div style="font-size:32px;margin-bottom:8px">'+(isUrgent?'⚠️':'🚗')+'</div>'
-    +'<div style="font-size:16px;font-weight:500;margin-bottom:6px;color:var(--text-primary)">'
-    +(isUrgent?'緊急出發提醒':'出發提醒')+'</div>'
-    +'<div style="font-size:13px;color:var(--text-secondary);margin-bottom:4px">車趟時間：<strong>'+timeStr+'</strong></div>'
-    +'<div style="font-size:13px;color:var(--text-primary);margin-bottom:16px;padding:8px;background:var(--bg-secondary);border-radius:var(--radius-md)">'+desc+'</div>'
-    +'<div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">請於 <strong>'+minutesBefore+'</strong> 分鐘後出發</div>'
+  openModal(
+    '<div class="modal-title" style="text-align:center;font-size:18px">'+(urgent?'⚠️ 緊急提醒':'🚗 出發提醒')+'</div>'
+    +'<div style="text-align:center;padding:12px 0">'
+    +'<div style="font-size:36px;margin-bottom:8px">'+(urgent?'⚠️':'🚗')+'</div>'
+    +'<div style="font-size:15px;font-weight:500;margin-bottom:8px">車趟時間：<span style="color:var(--blue-text)">'+timeStr+'</span></div>'
+    +'<div style="font-size:13px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-md);margin-bottom:12px">'+desc+'</div>'
+    +'<div style="font-size:13px;color:var(--text-secondary)">請於 <strong style="color:'+(urgent?'var(--red-text)':'var(--text-primary)')+'">'+minutesBefore+' 分鐘</strong> 後出發</div>'
     +'</div>'
     +'<div class="modal-footer">'
-    +'<button class="btn btn-primary" style="width:100%;padding:10px;font-size:14px" onclick="confirmDepart(\''+date+'\',\''+driverName+'\','+tripIdx+','+minutesBefore+')">✓ 確認出發</button>'
-    +'</div>';
-
-  openModal('<div class="modal-title" style="text-align:center">'+(isUrgent?'⚠️ 緊急提醒':'🚗 出發提醒')+'</div>' + alertHtml);
-
-  // If 45-min alert and driver still hasn't confirmed, notify admin after 5 min
-  if(isUrgent){
-    setTimeout(function(){
-      var key = date+'__'+driverName+'__'+tripIdx+'__confirmed';
-      if(!_notifiedTrips[key]){
-        notifyAdmin(driverName, trip, timeStr);
-      }
-    }, 5*60*1000); // 5 minutes
-  }
+    +'<button class="btn btn-primary" style="width:100%;padding:10px;font-size:14px" onclick="confirmDepart(\''+date+'\',\''+driverName+'\','+tripIdx+')">✓ 確認出發</button>'
+    +'</div>'
+  );
 }
 
-function confirmDepart(date, driverName, tripIdx, minutesBefore){
-  var key = date+'__'+driverName+'__'+tripIdx+'__confirmed';
-  _notifiedTrips[key] = true;
+function confirmDepart(date,driverName,tripIdx){
+  var k=date+'__'+driverName+'__'+tripIdx+'__confirmed';
+  _notifiedKeys[k]=true;
   closeModal();
-}
-
-function notifyAdmin(driverName, trip, timeStr){
-  // Only notify if admin is logged in on this device
-  if(currentRole === 'admin'){
-    sendNotification(
-      '🚨 司機未確認出發',
-      driverName + ' 的 ' + timeStr + ' 車趟未確認出發',
-      function(){ window.focus(); }
-    );
-    // Also show in-page alert
-    openModal(
-      '<div class="modal-title" style="color:var(--red-text)">🚨 司機未確認出發</div>'
-      +'<div style="padding:12px 0;font-size:13px;color:var(--text-primary)">'
-      +'<strong>'+driverName+'</strong> 的 <strong>'+timeStr+'</strong> 車趟未確認出發，請聯繫司機確認狀況。'
-      +'<div style="margin-top:8px;font-size:12px;color:var(--text-secondary)">'+trip+'</div>'
-      +'</div>'
-      +'<div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">知道了</button></div>'
-    );
-  }
-  // Store alert in Firebase for admin to see even if not currently logged in
-  window._fb.fbPush('adminAlerts', {
-    dt: nowDtStr(),
-    driverName: driverName,
-    trip: trip,
-    timeStr: timeStr,
-    type: 'unconfirmed_depart',
-    read: false
-  });
 }
 
 // ── Schedule storage ──────────────────────────────────────────
 function saveSchedules(){
-  window._fb.fbSet('schedules', schedules);
+  window._fb.fbSet('schedules',schedules);
 }
 
 function clearScheduleRange(){
@@ -1956,323 +1962,19 @@ function scheduleNavDay(delta){
   var el=document.getElementById('schedule-date-filter');
   var d=el&&el.value?new Date(el.value):new Date();
   d.setDate(d.getDate()+delta);
-  if(el) el.value=gds(d.getFullYear(),d.getMonth(),d.getDate());
+  if(el)el.value=gds(d.getFullYear(),d.getMonth(),d.getDate());
   renderSchedule();
 }
 
 function setupScheduleUI(){
   var btn=document.getElementById('schedule-import-btn');
-  if(btn) btn.style.display=currentRole==='admin'?'':'none';
+  if(btn)btn.style.display=currentRole==='admin'?'':'none';
   var singleBtn=document.getElementById('schedule-single-btn');
-  if(singleBtn) singleBtn.style.display=currentRole==='admin'?'':'none';
+  if(singleBtn)singleBtn.style.display=currentRole==='admin'?'':'none';
   var df=document.getElementById('schedule-date-filter');
-  if(df&&!df.value) df.value=todayStr();
+  if(df&&!df.value)df.value=todayStr();
   var driverFilterSel=document.getElementById('schedule-driver-filter');
-  if(driverFilterSel){
-    driverFilterSel.style.display=currentRole==='admin'?'':'none';
-  }
-}
-
-function renderSchedule(){
-  setupScheduleUI();
-  var el=document.getElementById('schedule-content');
-  if(!el) return;
-  el.innerHTML='';
-
-  var driverFilterSel=document.getElementById('schedule-driver-filter');
-  if(driverFilterSel&&currentRole==='admin'&&driverFilterSel.options.length<=1){
-    drivers.filter(function(d){return d.active;}).forEach(function(d){
-      var opt=document.createElement('option');
-      opt.value=d.name;opt.textContent=d.name;
-      driverFilterSel.appendChild(opt);
-    });
-  }
-  var selectedDriver=driverFilterSel?driverFilterSel.value:'all';
-  var singleDate=document.getElementById('schedule-date-filter')?document.getElementById('schedule-date-filter').value:'';
-  var rangeStart=document.getElementById('schedule-range-start')?document.getElementById('schedule-range-start').value:'';
-  var rangeEnd=document.getElementById('schedule-range-end')?document.getElementById('schedule-range-end').value:'';
-
-  var datesToShow=[];
-  if(rangeStart&&rangeEnd){
-    var cur=new Date(rangeStart);
-    var endD=new Date(rangeEnd);
-    while(cur<=endD){
-      var ds=gds(cur.getFullYear(),cur.getMonth(),cur.getDate());
-      if(schedules[ds])datesToShow.push(ds);
-      cur.setDate(cur.getDate()+1);
-    }
-  } else if(singleDate){
-    datesToShow=[singleDate];
-  } else {
-    el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">請選擇日期或期間</div>';
-    return;
-  }
-
-  if(!datesToShow.length){
-    el.innerHTML='<div style="color:var(--text-secondary);padding:20px 0">所選期間無班表資料'+(currentRole==='admin'?'，請點「+ 新增司機班表」匯入':'')+'</div>';
-    return;
-  }
-
-  datesToShow.forEach(function(date){
-    var sch=schedules[date];
-    var driversData=sch&&sch.drivers?sch.drivers:{};
-    var driverNames=Object.keys(driversData);
-    if(currentRole==='driver'){
-      var myName=currentUser.name;
-      driverNames=driverNames.filter(function(n){return n===myName||n.indexOf(myName)>=0;});
-    } else if(selectedDriver!=='all'){
-      driverNames=driverNames.filter(function(n){return n===selectedDriver||n.indexOf(selectedDriver)>=0;});
-    }
-    if(!driverNames.length) return;
-
-    var header=document.createElement('div');
-    header.style.cssText='font-size:13px;font-weight:500;color:var(--text-secondary);margin:10px 0 8px;padding-bottom:6px;border-bottom:0.5px solid var(--border-light)';
-    header.textContent=date+(datesToShow.length>1?' （'+driverNames.length+'位）':'');
-    el.appendChild(header);
-
-    driverNames.forEach(function(driverName){
-      var block=driversData[driverName];
-      var blockTrips=block&&block.trips?block.trips:[];
-
-      var div=document.createElement('div');
-      div.className='schedule-driver-block schedule-day';
-
-      var dh=document.createElement('div');
-      dh.className='schedule-driver-header';
-      dh.innerHTML='<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>'
-        +'<span class="schedule-driver-name">'+driverName+'</span>'
-        +'<span style="font-size:11px;color:var(--blue-text);margin-left:auto">'+blockTrips.length+' 趟</span>'
-        +(currentRole==='admin'?'<button class="sch-add-trip-btn" style="font-size:10px;padding:2px 8px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--blue-bg);color:var(--blue-text);cursor:pointer;margin-left:8px">+ 新增</button>':'')
-        +(currentRole==='admin'?'<button class="sch-del-btn" style="font-size:10px;padding:2px 8px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--red-bg);color:var(--red-text);cursor:pointer;margin-left:4px">刪除班表</button>':'');
-      div.appendChild(dh);
-
-      var delBtn=dh.querySelector('.sch-del-btn');
-      if(delBtn){(function(d,n){delBtn.onclick=function(e){e.stopPropagation();if(!confirm('確認刪除 '+n+' '+d+' 的班表？'))return;if(schedules[d]&&schedules[d].drivers){delete schedules[d].drivers[n];if(!Object.keys(schedules[d].drivers).length)delete schedules[d];}saveSchedules();renderSchedule();};})(date,driverName);}
-      var addTripBtn=dh.querySelector('.sch-add-trip-btn');
-      if(addTripBtn){(function(d,n){addTripBtn.onclick=function(e){e.stopPropagation();openTripItemModal(d,n,-1,'');};})(date,driverName);}
-
-      var tripArea=document.createElement('div');
-      tripArea.className='schedule-trips';
-
-      if(!blockTrips.length){
-        var empty=document.createElement('div');
-        empty.className='schedule-empty';empty.textContent='無車趟資料';
-        tripArea.appendChild(empty);
-      } else {
-        blockTrips.forEach(function(trip,ti){
-          var item=document.createElement('div');
-          item.className='schedule-trip-item';
-          item.style.cssText='display:flex;align-items:flex-start;gap:8px;padding:7px 10px;justify-content:space-between';
-
-          var tripContent=document.createElement('div');
-          tripContent.style.cssText='flex:1;cursor:pointer;min-width:0';
-          var timeMatch=trip.match(/^(\d{4})\s*(.*)/);
-          if(timeMatch){
-            var span=document.createElement('span');
-            span.style.cssText='font-family:monospace;font-weight:500;color:var(--blue-text);margin-right:8px';
-            span.textContent=timeMatch[1].slice(0,2)+':'+timeMatch[1].slice(2);
-            tripContent.appendChild(span);
-            tripContent.appendChild(document.createTextNode(timeMatch[2]));
-          } else {tripContent.textContent=trip;}
-
-          var actionDiv=document.createElement('div');
-          actionDiv.style.cssText='display:flex;gap:4px;flex-shrink:0;margin-top:1px';
-          if(currentRole==='admin'){
-            var editBtn=document.createElement('button');
-            editBtn.textContent='編輯';editBtn.style.cssText='font-size:10px;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--blue-bg);color:var(--blue-text);cursor:pointer';
-            var delBtn2=document.createElement('button');
-            delBtn2.textContent='刪除';delBtn2.style.cssText='font-size:10px;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:4px;background:var(--red-bg);color:var(--red-text);cursor:pointer';
-            actionDiv.appendChild(editBtn);actionDiv.appendChild(delBtn2);
-            (function(tripIdx,tripText){
-              editBtn.onclick=function(e){e.stopPropagation();openTripItemModal(date,driverName,tripIdx,tripText);};
-              delBtn2.onclick=function(e){e.stopPropagation();if(!confirm('確認刪除此車趟？'))return;schedules[date].drivers[driverName].trips.splice(tripIdx,1);saveSchedules();renderSchedule();};
-            })(ti,trip);
-          }
-
-          var noteArea=document.createElement('div');noteArea.style.display='none';noteArea.style.marginTop='6px';
-          (function(tripIdx){
-            tripContent.onclick=function(){
-              var noteKey=date+'__'+driverName+'__'+tripIdx;
-              var existingNote=(schedules[date]&&schedules[date].notes&&schedules[date].notes[noteKey])||'';
-              if(noteArea.style.display!=='none'){noteArea.style.display='none';item.classList.remove('expanded');}
-              else{
-                noteArea.style.display='block';item.classList.add('expanded');noteArea.innerHTML='';
-                var lbl=document.createElement('div');lbl.style.cssText='font-size:11px;color:var(--amber-text);margin-bottom:4px;font-weight:500';lbl.textContent='備註';noteArea.appendChild(lbl);
-                var ta=document.createElement('textarea');ta.style.cssText='width:100%;border:0.5px solid rgba(0,0,0,.15);border-radius:4px;padding:6px;font-size:12px;background:transparent;color:var(--amber-text);resize:none;min-height:60px';ta.placeholder='輸入備註...';ta.value=existingNote;
-                if(currentRole!=='admin')ta.readOnly=true;
-                noteArea.appendChild(ta);
-                if(currentRole==='admin'){
-                  var saveBtn2=document.createElement('button');saveBtn2.textContent='儲存備註';saveBtn2.style.cssText='font-size:11px;padding:3px 10px;border:0.5px solid rgba(0,0,0,.2);border-radius:4px;background:rgba(0,0,0,.06);cursor:pointer;color:var(--amber-text);margin-top:6px';
-                  saveBtn2.onclick=function(e2){e2.stopPropagation();if(!schedules[date].notes)schedules[date].notes={};schedules[date].notes[noteKey]=ta.value;saveSchedules();alert('備註已儲存');};
-                  noteArea.appendChild(saveBtn2);
-                }
-              }
-            };
-          })(ti);
-
-          var itemInner=document.createElement('div');itemInner.style.cssText='flex:1;min-width:0';
-          itemInner.appendChild(tripContent);itemInner.appendChild(noteArea);
-          item.appendChild(itemInner);item.appendChild(actionDiv);
-          tripArea.appendChild(item);
-        });
-      }
-      div.appendChild(tripArea);
-      el.appendChild(div);
-    });
-  });
-}
-
-function openTripItemModal(date,driverName,tripIdx,existingText){
-  _tripEditCtx={date:date,driverName:driverName,tripIdx:tripIdx};
-  openModal(
-    '<div class="modal-title">'+(tripIdx===-1?'新增車趟':'編輯車趟')+'</div>'
-    +'<div class="form-row"><label class="form-label">車趟內容</label>'
-    +'<textarea class="form-input" id="m-trip-item-text" style="min-height:80px;resize:vertical">'+(existingText||'')+'</textarea></div>'
-    +'<div style="font-size:11px;color:var(--text-secondary);padding:6px 0">格式範例：0550 送蘆竹Ｏ(EUK749204)</div>'
-    +'<div class="modal-footer">'
-    +'<button class="btn" onclick="closeModal()">取消</button>'
-    +'<button class="btn btn-primary" onclick="saveTripItem()">儲存</button>'
-    +'</div>'
-  );
-}
-
-function saveTripItem(){
-  var ctx=_tripEditCtx;
-  var text=document.getElementById('m-trip-item-text').value.trim();
-  if(!text){alert('請輸入車趟內容');return;}
-  if(!schedules[ctx.date]||!schedules[ctx.date].drivers||!schedules[ctx.date].drivers[ctx.driverName]){alert('找不到此司機班表');return;}
-  var trips=schedules[ctx.date].drivers[ctx.driverName].trips;
-  if(ctx.tripIdx===-1){trips.push(text);}else{trips[ctx.tripIdx]=text;}
-  trips.sort(function(a,b){
-    var ta=parseInt((a.match(/^[0-9]{4}/)||['0'])[0])||0;
-    var tb=parseInt((b.match(/^[0-9]{4}/)||['0'])[0])||0;
-    return ta-tb;
-  });
-  saveSchedules();closeModal();renderSchedule();
-}
-
-function openSingleDriverScheduleModal(){
-  var curDate=document.getElementById('schedule-date-filter')?document.getElementById('schedule-date-filter').value:todayStr();
-  var driverOpts=drivers.filter(function(d){return d.active;})
-    .map(function(d){return '<option value="'+d.name+'">'+d.name+'</option>';}).join('');
-  openModal(
-    '<div class="modal-title">新增單一司機班表</div>'
-    +'<div class="form-row"><label class="form-label">日期</label>'
-    +'<input class="form-input" type="date" id="m-sch-date" value="'+curDate+'"></div>'
-    +'<div class="form-row"><label class="form-label">司機</label>'
-    +'<select class="form-input" id="m-single-driver">'+driverOpts+'</select></div>'
-    +'<div class="form-row"><label class="form-label">班表內容（每行一趟）</label>'
-    +'<textarea class="paste-area" id="m-sch-text" placeholder="0550 送蘆竹Ｏ(EUK749204)&#10;0900 接松山K&#10;..." style="min-height:160px;font-size:12px"></textarea></div>'
-    +'<div style="font-size:11px;color:var(--text-secondary);padding:4px 0">每行一筆車趟，時間格式：0550</div>'
-    +'<div class="modal-footer">'
-    +'<button class="btn" onclick="closeModal()">取消</button>'
-    +'<button class="btn btn-primary" onclick="saveSingleDriverSchedule()">儲存</button>'
-    +'</div>'
-  );
-}
-
-function saveSingleDriverSchedule(){
-  var date=document.getElementById('m-sch-date')?document.getElementById('m-sch-date').value:'';
-  var driverName=document.getElementById('m-single-driver')?document.getElementById('m-single-driver').value:'';
-  var text=document.getElementById('m-sch-text')?document.getElementById('m-sch-text').value.trim():'';
-  if(!date){alert('請選擇日期');return;}
-  if(!driverName){alert('請選擇司機');return;}
-  if(!text){alert('請輸入班表內容');return;}
-  var trips=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>0;});
-  trips.sort(function(a,b){
-    var ta=parseInt((a.match(/^[0-9]{4}/)||['0'])[0])||0;
-    var tb=parseInt((b.match(/^[0-9]{4}/)||['0'])[0])||0;
-    return ta-tb;
-  });
-  if(!schedules[date])schedules[date]={drivers:{},updatedAt:nowDtStr()};
-  schedules[date].drivers[driverName]={trips:trips,updatedAt:nowDtStr()};
-  schedules[date].updatedAt=nowDtStr();
-  saveSchedules();closeModal();renderSchedule();
-  alert('已儲存 '+driverName+' '+date+' 的班表（共 '+trips.length+' 趣）');
-}
-
-function openSchedulePasteModal(){
-  var curDate=document.getElementById('schedule-date-filter')?document.getElementById('schedule-date-filter').value:todayStr();
-  openModal(
-    '<div class="modal-title">匯入班表（排）</div>'
-    +'<div class="form-row"><label class="form-label">日期</label>'
-    +'<input class="form-input" type="date" id="m-sch-date" value="'+curDate+'"></div>'
-    +'<div class="form-row"><label class="form-label">貼上一排班表</label>'
-    +'<div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px">Google Sheet → 選擇一排 → 複製 → 貼入下方</div>'
-    +'<textarea class="paste-area" id="m-sch-text" placeholder="貼上班表內容..." style="min-height:200px;font-size:11px;font-family:monospace"></textarea></div>'
-    +'<div style="font-size:11px;color:var(--text-secondary);padding:4px 0">系統自動辨識「司機：」或「姓名：」欄位對應各司機</div>'
-    +'<div class="modal-footer">'
-    +'<button class="btn" onclick="closeModal()">取消</button>'
-    +'<button class="btn btn-primary" onclick="saveSchedule()">匯入</button>'
-    +'</div>'
-  );
-}
-
-function saveSchedule(){
-  var date=document.getElementById('m-sch-date')?document.getElementById('m-sch-date').value:todayStr();
-  var text=document.getElementById('m-sch-text')?document.getElementById('m-sch-text').value.trim():'';
-  if(!date){alert('請選擇日期');return;}
-  if(!text){alert('請貼上班表內容');return;}
-  var parsed=parseWholeSheet(text);
-  if(!parsed||!Object.keys(parsed).length){alert('無法辨識司機名字，請確認班表包含「司機：」或「姓名：」欄位');return;}
-
-  var matched={};var unmatched=[];
-  Object.keys(parsed).forEach(function(parsedName){
-    var found=drivers.find(function(d){return d.name===parsedName||d.name.indexOf(parsedName)>=0||parsedName.indexOf(d.name)>=0;});
-    if(found){matched[found.name]=parsed[parsedName];}else{unmatched.push(parsedName);}
-  });
-  if(!Object.keys(matched).length){alert('無法匹配任何司機帳號。\n班表中的名字：'+Object.keys(parsed).join('、')+'\n請確認系統帳號姓名與班表一致。');return;}
-  if(unmatched.length){if(!confirm('以下名字無法匹配帳號，將不匯入：\n'+unmatched.join('、')+'\n\n是否繼續匯入已匹配的 '+Object.keys(matched).length+' 位司機？'))return;}
-
-  if(!schedules[date])schedules[date]={drivers:{},updatedAt:nowDtStr()};
-  Object.keys(matched).forEach(function(name){
-    var sorted=matched[name].slice().sort(function(a,b){
-      var ta=parseInt((a.match(/^[0-9]{4}/)||['0'])[0])||0;
-      var tb=parseInt((b.match(/^[0-9]{4}/)||['0'])[0])||0;
-      return ta-tb;
-    });
-    schedules[date].drivers[name]={trips:sorted,updatedAt:nowDtStr()};
-  });
-  schedules[date].updatedAt=nowDtStr();
-  saveSchedules();closeModal();renderSchedule();
-  alert('\u6210\u529f\u532f\u5165 '+Object.keys(matched).length+'\u4f4d\u53f8\u6a5f\u7684\u73ed\u8868'+(unmatched.length?' (\u672a\u5339\u914d'+unmatched.length+'\u4f4d)':''));
-}
-
-function parseWholeSheet(text){
-  var rows=text.split('\n').map(function(r){return r.split('\t');});
-  var maxCols=0;
-  rows.forEach(function(r){if(r.length>maxCols)maxCols=r.length;});
-  rows=rows.map(function(r){while(r.length<maxCols)r.push('');return r.map(function(c){return c.replace(/\r/g,'');});});
-  var driverNameByCol={};
-  var driverKWs=['\u53f8\u6a5f\uff1a','\u53f8\u6a5f:','\u59d3\u540d\uff1a','\u59d3\u540d:'];
-  rows.forEach(function(row){
-    row.forEach(function(cell,col){
-      var c=cell.trim();
-      driverKWs.forEach(function(kw){
-        if(c.indexOf(kw)===0&&!driverNameByCol[col]){
-          var name=c.slice(kw.length).trim();
-          name=name.replace(/\s*[\u0028\uff08][^\u0029\uff09]*[\u0029\uff09]/,'').trim();
-          if(name)driverNameByCol[col]=name;
-        }
-      });
-    });
-  });
-  if(!Object.keys(driverNameByCol).length)return{};
-  var skipKWs=['\u96fb\u8a71','\u8eca\u865f','\u8eca\u724c','\u8eca\u578b','\u6392\u73ed','\u6708\u85aa','\u4fdd','\u53f8\u6a5f','\u59d3\u540d'];
-  var result={};
-  Object.keys(driverNameByCol).forEach(function(col){
-    var name=driverNameByCol[col];result[name]=[];
-    rows.forEach(function(row){
-      var cell=(row[col]||'').trim();if(!cell)return;
-      var skip=false;
-      skipKWs.forEach(function(kw){if(cell.indexOf(kw)===0)skip=true;});
-      if(/^[0-9]{2}-[0-9]{2}/.test(cell)&&cell.length<15)skip=true;
-      if(skip)return;
-      if(/^[0-9]{4}/.test(cell)){result[name].push(cell);}
-    });
-  });
-  Object.keys(result).forEach(function(name){if(!result[name].length)delete result[name];});
-  return result;
+  if(driverFilterSel)driverFilterSel.style.display=currentRole==='admin'?'':'none';
 }
 
 // ─── Mobile navigation ────────────────────────────────────────
